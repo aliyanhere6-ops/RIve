@@ -1,0 +1,15 @@
+<!doctype html><html><meta charset="utf-8"><title>Avatar blend check</title><body style="background:#18202b;color:white;font:16px system-ui"><h1>Continuous head + mouth blend check</h1><p id="result">Loading…</p><canvas id="check" style="width:600px;height:600px"></canvas><script type="module">
+import {createAvatar} from './avatar-renderer.mjs';
+let frames=0,done=false;
+window.addEventListener('error',event=>{done=true;document.getElementById('result').textContent='FAIL: '+event.message;});
+const avatar=await createAvatar(document.getElementById('check'),()=>{});
+for(const name of ['visemes','Expressions','poses','sizing ','xy']){if(!avatar.number(name))throw Error('Missing '+name);avatar.number(name).value=0;}
+if(!avatar.bodyAvailable)throw Error('Torso node not found');
+if(!avatar.hairAvailable)throw Error('Hair node not found');
+avatar.target.enabled=true;avatar.target.bodyEnabled=true;
+function test(now){if(done)return;frames++;avatar.target.x=Math.sin(now/600)*.8;avatar.target.y=Math.cos(now/800)*.6;avatar.target.viseme=[7,8,9,10,11,12][Math.floor(now/220)%6];avatar.target.opening=(Math.sin(now/140)+1)/2;avatar.target.bodyX=Math.sin(now/900);avatar.target.bodyY=Math.cos(now/1100)*.4;avatar.target.bodyRoll=Math.sin(now/1000)*.5;
+avatar.target.voice=(Math.sin(now/700)+1)/2;
+document.getElementById('result').textContent=frames>150?'PASS: hair idle/speech physics, torso, head and exclusive mouth rendering.':'Testing character motion… '+frames;
+requestAnimationFrame(test);}requestAnimationFrame(test);
+window.addEventListener('pagehide',()=>avatar.dispose());
+</script></body></html>

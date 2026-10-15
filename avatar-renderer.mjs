@@ -1,0 +1,71 @@
+import {HairMotion} from './hair-motion.mjs';
+// Keep the authored state machine/data bindings, then blend tracking poses before drawing.
+export async function createAvatar(canvas, onState) {
+  const base=new URL('./vendor/',import.meta.url).href;
+  const {default:initialize}=await import(base+'canvas_advanced.mjs');
+  const wasm=await fetch(base+'runtime.wasm');if(!wasm.ok)throw Error('Local Rive runtime unavailable');
+  const runtime=await initialize({locateFile:file=>base+file,wasmBinary:await wasm.arrayBuffer()});
+  const response=await fetch('vtuber.riv');if(!response.ok)throw Error('Avatar file unavailable');
+  const file=await runtime.load(new Uint8Array(await response.arrayBuffer()));
+  const artboard=file.artboardByName('character');
+  const machine=new runtime.StateMachineInstance(artboard.stateMachineByName('State Machine 1'),artboard);
+  const model=file.viewModelByName('main '),instance=model.instanceByName('Room')||model.defaultInstance()||model.instance();
+  artboard.bindViewModelInstance(instance);machine.bindViewModelInstance(instance);
+  const renderer=runtime.makeRenderer(canvas),animations=new Map();
+  function animation(name){if(!animations.has(name)){const a=artboard.animationByName(name);if(!a)throw Error('Missing animation '+name);animations.set(name,new runtime.LinearAnimationInstance(a,artboard));}return animations.get(name);}
+  function apply(name,mix=1){const a=animation(name);a.time=0;a.advance(0);a.apply(mix);}
+  const mouths=['idle ','L','R','Th','Fv','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink ','shoking ','Angry'];
+  const torso=artboard.node('body');
+  const hair=artboard.node('Hair Motion'),hairMotion=new HairMotion();
+  let hairBase=hair?{y:hair.y,rotation:hair.rotation}:null;
+  let torsoBase=torso?{x:torso.x,y:torso.y,rotation:torso.rotation}:null;
+  const target={enabled:false,x:0,y:0,viseme:0,opening:0,bodyX:0,bodyY:0,bodyRoll:0,bodyEnabled:true,voice:0,hairEnabled:true,hairStrength:1};
+  let x=0,y=0,opening=0,last=0,disposed=false,raf,bodyX=0,bodyY=0,bodyRoll=0,selectedMouth=0,lastMouthSwitch=0;
+  const metrics={fps:0,drawMs:0};let frames=0,metricTime=0;
+  const resize=()=>{const dpr=Math.min(1.25,devicePixelRatio||1,Math.sqrt(1000000/Math.max(1,canvas.clientWidth*canvas.clientHeight)));canvas.width=Math.max(1,Math.round(canvas.clientWidth*dpr));canvas.height=Math.max(1,Math.round(canvas.clientHeight*dpr));};
+  const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
+  function frame(now){
+    if(disposed)return;
+    // A stable 30 Hz render budget leaves time for capture and inference on laptops.
+    if(last&&now-last<30){raf=runtime.requestAnimationFrame(frame);return;}
+    const start=performance.now();
+    if(!metricTime)metricTime=now;
+    frames++;if(now-metricTime>=1000){metrics.fps=frames*1000/(now-metricTime);frames=0;metricTime=now;}
+    const dt=Math.min(.05,last?(now-last)/1000:1/60);last=now;
+    // Remove last frame's procedural offset before advancing authored animations.
+    if(torso&&torsoBase){torso.x=torsoBase.x;torso.y=torsoBase.y;torso.rotation=torsoBase.rotation;}
+    if(hair&&hairBase){hair.y=hairBase.y;hair.rotation=hairBase.rotation;}
+    machine.advanceAndApply(dt);
+    if(machine.stateChangedCount()){const states=[];for(let i=0;i<machine.stateChangedCount();i++)states.push(machine.stateChangedNameByIndex(i));onState(states);}
+    if(target.enabled){
+      const a=1-Math.exp(-dt/.065);x+=(target.x-x)*a;y+=(target.y-y)*a;opening+=(target.opening-opening)*(1-Math.exp(-dt/.035));
+      apply('RESET');
+      const total=Math.max(1,Math.abs(x)+Math.abs(y));
+      if(Math.abs(x)>.001)apply(x>0?'right ':'left ',Math.abs(x)/total);
+      if(Math.abs(y)>.001)apply(y>0?'DOWN ':'UP',Math.abs(y)/total);
+      // The mouth drawings have separate teeth/tongue/visibility keys. Mixing
+      // their geometry creates hybrid mouths. Apply exactly ONE authored shape.
+      const wanted=target.viseme>=13?target.viseme:opening<.1?0:target.viseme;
+      if(wanted!==selectedMouth&&(wanted===0||now-lastMouthSwitch>65)){selectedMouth=wanted;lastMouthSwitch=now;}
+      apply('idle ');if(selectedMouth!==0)apply(mouths[selectedMouth]);
+    }
+    if(torso){
+      torsoBase={x:torso.x,y:torso.y,rotation:torso.rotation};
+      const enabled=target.enabled&&target.bodyEnabled,follow=1-Math.exp(-dt/.16);
+      bodyX+=((enabled?target.bodyX*12+x*3:0)-bodyX)*follow;
+      bodyY+=((enabled?target.bodyY*6:0)-bodyY)*follow;
+      bodyRoll+=((enabled?target.bodyRoll*.1+x*.022:0)-bodyRoll)*follow;
+      torso.x+=bodyX;torso.y+=bodyY;torso.rotation+=bodyRoll;
+    }
+    if(hair){
+      hairBase={y:hair.y,rotation:hair.rotation};
+      const sway=hairMotion.update(dt,now/1000,{voice:target.voice,head:x,strength:target.hairStrength,enabled:target.hairEnabled});
+      hair.y+=sway.y;hair.rotation+=sway.rotation;
+    }
+    artboard.advance(dt);renderer.clear();renderer.save();
+    renderer.align(runtime.Fit.contain,runtime.Alignment.center,{minX:0,minY:0,maxX:canvas.width,maxY:canvas.height},artboard.bounds);
+    artboard.draw(renderer);renderer.restore();metrics.drawMs=metrics.drawMs*.9+(performance.now()-start)*.1;raf=runtime.requestAnimationFrame(frame);
+  }
+  raf=runtime.requestAnimationFrame(frame);
+  return {loaded:true,target,metrics,hairAvailable:!!hair,bodyAvailable:!!torso,number:name=>instance.number(name),resizeDrawingSurfaceToCanvas:resize,dispose(){disposed=true;runtime.cancelAnimationFrame(raf);observer.disconnect();for(const a of animations.values())a.delete();machine.delete();artboard.delete();renderer.delete();instance.unref();file.unref();}};
+}

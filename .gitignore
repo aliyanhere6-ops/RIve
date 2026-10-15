@@ -1,0 +1,17 @@
+# Local preview captures and earlier asset exports
+*.jpg
+*.png
+exports/
+vtuber-original.riv
+vtuber-before-hair.riv
+rive-api.d.ts
+
+# Local credentials, dependencies and editor state
+.env
+.env.*
+!.env.example
+node_modules/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
