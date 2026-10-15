@@ -11,6 +11,8 @@ rive-api.d.ts
 .env.*
 !.env.example
 node_modules/
+dist/
+.vercel/
 .vscode/
 .DS_Store
 Thumbs.db

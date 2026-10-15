@@ -4,6 +4,7 @@
   "private": true,
   "description": "Local Rive VTuber studio with face, lip, torso and hair motion",
   "scripts": {
+    "build": "node build.cjs",
     "start": "node server.cjs",
     "test": "node tracking-core.test.mjs && node tracking-client.test.mjs && node hair-motion.test.mjs"
   }
