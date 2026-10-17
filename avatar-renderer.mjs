@@ -94,10 +94,12 @@ export async function createAvatar(canvas, onState) {
       const shoulder=matrix?{x:matrix.tx,y:matrix.ty}:{x:side==='left'?310:190,y:290};matrix?.delete?.();
       s.shoulder??=shoulder;
       const rest={x:s.base.x+shoulder.x-s.shoulder.x,y:s.base.y+shoulder.y-s.shoulder.y};
-      const bounded=goal?armReach(goal,shoulder):rest;
+      // The long sleeve rig needs elbow clearance; a near-shoulder wrist folds it inside out.
+      const safeGoal=goal?{x:side==='left'?Math.max(shoulder.x-25,goal.x):Math.min(shoulder.x+25,goal.x),y:goal.y}:null;
+      const bounded=safeGoal?armReach(safeGoal,shoulder,235,160):rest;
       const smooth=s.motion.update(bounded,dt,!!goal);
       // Reapply reach after smoothing: moving shoulders cannot leave a wrist outside its chain.
-      const point=goal?armReach(smooth,shoulder):smooth;
+      const point=goal?armReach(smooth,shoulder,235,160):smooth;
       node.x=point.x;node.y=point.y;node.rotation=s.base.r;
       details.hands[side]={x:node.x,y:node.y,tracked:!!goal,shoulder,reach:Math.hypot(point.x-shoulder.x,point.y-shoulder.y)};
     }
