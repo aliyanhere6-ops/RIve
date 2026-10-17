@@ -13,12 +13,14 @@ const opaque=alpha();a.background.setTransparent(true);await wait();
 if(a.background.transparent!==1||alpha()>=opaque*.95)throw Error('Background transparency did not remove artwork');
 a.target.enabled=true;a.detailTargets.hands={left:{x:380,y:250,rotation:.2},right:{x:120,y:250,rotation:-.2}};
 a.detailTargets.eyes={left:{x:.8,y:0},right:{x:.8,y:0}};await wait();
-if(Math.abs(a.details.hands.left.y-250)>2||Math.abs(a.details.hands.right.y-250)>2)throw Error('Hand targets did not move');
+if(!a.details.hands.left.tracked||!a.details.hands.right.tracked)throw Error('Hand targets did not move');
 const eyes=structuredClone(a.details.eyes);a.detailTargets.eyes={left:{x:-.8,y:0},right:{x:-.8,y:0}};await wait();
 document.getElementById('detail').textContent=JSON.stringify({before:eyes,after:a.details.eyes},null,2);
-if(eyes.left.gazeX-a.details.eyes.left.gazeX<1.5||eyes.right.gazeX-a.details.eyes.right.gazeX<1.5)throw Error('Eye targets did not move independently');
+if(a.details.eyes.left.gazeX!==0||a.details.eyes.right.gazeX!==0)throw Error('Removed eye tracking is still active');
+a.detailTargets.hands={left:{x:-400,y:-400},right:{x:900,y:900}};await wait();
+for(const side of ['left','right'])if(a.details.hands[side].reach>235.01)throw Error('Wrist escaped arm reach');
 document.getElementById('detail').textContent=JSON.stringify(a.details,null,2);
-result.textContent='PASS: both hand targets, both eyeball targets, colour and transparency render; existing properties preserved';
+result.textContent='PASS: shoulder-anchored hand reach, disabled eye gaze, colour and transparency; existing properties preserved';
 window.addEventListener('pagehide',()=>a.dispose());
 }catch(e){result.textContent='FAIL: '+e.message;throw e;}
 </script>

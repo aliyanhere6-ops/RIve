@@ -14,22 +14,44 @@ export function eyeGaze(points,blendshapes={}){
   }
   return {right:eye(33,133,159,145,468,'eyeBlinkRight'),left:eye(362,263,386,374,473,'eyeBlinkLeft')};
 }
-export function handTargets(result,face,{flipX=false}={}){
+export function handTargets(result,face,{flipX=false,referenceSpan=face?.span}={}){
   const targets={left:null,right:null};
   if(!result?.landmarks||!face||!Number.isFinite(face.span))return targets;
   for(let i=0;i<result.landmarks.length;i++){
     const hand=result.landmarks[i],label=result.handedness?.[i]?.[0];
-    if(!hand?.[9]||!label||label.score<.6)continue;
+    if(!hand?.[9]||!label||label.score<.75)continue;
     // The detector receives unmirrored camera frames. Mirror both position and side together.
     let side=label.categoryName==='Left'?'right':'left';
     if(flipX)side=side==='left'?'right':'left';
-    const span=Math.max(.04,face.span),wrist=hand[0],palm=hand[9];
+    const span=Math.max(.04,referenceSpan||face.span),wrist=hand[0];
     const x=(wrist.x-face.x)/span*44*(flipX?-1:1);
     const y=(wrist.y-face.y)/span*44;
     if(!Number.isFinite(x)||!Number.isFinite(y))continue;
-    targets[side]={x:clamp(250+x,10,490),y:clamp(132+y,15,550),rotation:clamp(Math.atan2((palm.x-wrist.x)*(flipX?-1:1),wrist.y-palm.y),-1.2,1.2)};
+    targets[side]={x:clamp(250+x,20,480),y:clamp(132+y,70,530)};
   }
   return targets;
+}
+export function armReach(point,shoulder,maxReach=235,minReach=65){
+  const dx=point.x-shoulder.x,dy=point.y-shoulder.y,distance=Math.hypot(dx,dy);
+  if(distance<.001)return {x:shoulder.x,y:shoulder.y+minReach};
+  const reach=clamp(distance,minReach,maxReach);
+  return {x:shoulder.x+dx/distance*reach,y:shoulder.y+dy/distance*reach};
+}
+export class HandMotion {
+  constructor(x,y){this.x=x;this.y=y;this.tx=x;this.ty=y;this.vx=0;this.vy=0;}
+  update(point,dt,active=true){
+    dt=clamp(dt,0,.1);const omega=active?19:11,decay=Math.exp(-omega*dt);
+    for(const axis of ['x','y']){
+      const velocity='v'+axis;
+      const t='t'+axis;
+      if(Math.abs(point[axis]-this[t])>.65)this[t]+=clamp(point[axis]-this[t],-500*dt,500*dt);
+      const desired=this[t];
+      const offset=this[axis]-desired,c=this[velocity]+omega*offset;
+      this[axis]=desired+(offset+c*dt)*decay;
+      this[velocity]=(this[velocity]-omega*c*dt)*decay;
+    }
+    return {x:this.x,y:this.y};
+  }
 }
 export function colorNumber(hex){
   if(!/^#[0-9a-f]{6}$/i.test(hex))throw Error('Invalid background colour');
