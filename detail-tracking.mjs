@@ -14,20 +14,32 @@ export function eyeGaze(points,blendshapes={}){
   }
   return {right:eye(33,133,159,145,468,'eyeBlinkRight'),left:eye(362,263,386,374,473,'eyeBlinkLeft')};
 }
-export function handTargets(result,face,{flipX=false,referenceSpan=face?.span}={}){
+export function handTargets(result,pose,{flipX=false,aspect=.75}={}){
   const targets={left:null,right:null};
-  if(!result?.landmarks||!face||!Number.isFinite(face.span))return targets;
-  for(let i=0;i<result.landmarks.length;i++){
-    const hand=result.landmarks[i],label=result.handedness?.[i]?.[0];
-    if(!hand?.[9]||!label||label.score<.75)continue;
-    // The detector receives unmirrored camera frames. Mirror both position and side together.
-    let side=label.categoryName==='Left'?'right':'left';
-    if(flipX)side=side==='left'?'right':'left';
-    const span=Math.max(.04,referenceSpan||face.span),wrist=hand[0];
-    const x=(wrist.x-face.x)/span*44*(flipX?-1:1);
-    const y=(wrist.y-face.y)/span*44;
-    if(!Number.isFinite(x)||!Number.isFinite(y))continue;
-    targets[side]={x:clamp(250+x,20,480),y:clamp(132+y,70,530)};
+  const visible=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&(p.visibility??1)>.55;
+  if(!visible(pose?.[11])||!visible(pose?.[12]))return targets;
+  const distance=(a,b)=>Math.hypot(a.x-b.x,(a.y-b.y)*aspect);
+  const width=distance(pose[11],pose[12]);if(width<.08)return targets;
+  const arms=[[11,13,15],[12,14,16]].map(([s,e,w])=>({shoulder:pose[s],elbow:pose[e],wrist:pose[w],hand:null}));
+  // Match hands to the body's wrists, never to a mirrored handedness label.
+  const hands=(result?.landmarks||[]).map(p=>p?.[0]).filter(p=>visible(p)&&p.x>=0&&p.x<=1&&p.y>=0&&p.y<=1);
+  if(hands.length>=2){
+    const direct=distance(hands[0],arms[0].wrist)+distance(hands[1],arms[1].wrist);
+    const swapped=distance(hands[1],arms[0].wrist)+distance(hands[0],arms[1].wrist);
+    arms[0].hand=hands[direct<=swapped?0:1];arms[1].hand=hands[direct<=swapped?1:0];
+  }else if(hands.length===1){
+    const first=distance(hands[0],arms[0].wrist),second=distance(hands[0],arms[1].wrist);
+    arms[first<=second?0:1].hand=hands[0];
+  }
+  const center=(pose[11].x+pose[12].x)/2;
+  for(const arm of arms){
+    const {shoulder,elbow}=arm,wrist=arm.hand||(visible(arm.wrist)?arm.wrist:null);
+    if(!wrist||wrist.x<0||wrist.x>1||wrist.y<0||wrist.y>1)continue;
+    const side=((shoulder.x-center)*(flipX?-1:1))<0?'right':'left';
+    const measured=visible(elbow)&&visible(arm.wrist)?distance(shoulder,elbow)+distance(elbow,arm.wrist):width*1.4;
+    const length=clamp(measured,width*1.05,width*1.8);
+    const scale=235/length;
+    targets[side]={x:(wrist.x-shoulder.x)*(flipX?-1:1)*scale,y:(wrist.y-shoulder.y)*aspect*scale,relative:true};
   }
   return targets;
 }

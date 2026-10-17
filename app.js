@@ -26,6 +26,7 @@ $('bgTransparent').onchange=()=>{avatar?.background.setTransparent($('bgTranspar
 $('bgColor').oninput=()=>{avatar?.background.setColor($('bgColor').value);$('bgColorLabel').textContent=$('bgColor').value.toUpperCase();};
 $('handTracking').onchange=()=>{if(avatar)avatar.detailTargets.hands={left:null,right:null};};
 let handSeen={left:0,right:0};
+let armPose=null,armPoseAt=0;
 for(const [key,max] of fields){
   const row=document.createElement('div');row.className='control';
   const label=document.createElement('div'),text=document.createElement('span'),out=document.createElement('output'),input=document.createElement('input');
@@ -59,7 +60,7 @@ async function loadModels(){
   if(!tracker)tracker=createTrackingClient();
   try{await tracker.ready;}catch(error){tracker.dispose();tracker=null;throw error;}
 }
-function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;avatar.detailTargets.hands={left:null,right:null};avatar.detailTargets.eyes=null;}handSeen={left:0,right:0};set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
+function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;avatar.detailTargets.hands={left:null,right:null};avatar.detailTargets.eyes=null;avatar.detailTargets.enabled=false;}handSeen={left:0,right:0};armPose=null;armPoseAt=0;set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
 async function stop(){
   running=false;generation++;const old=stream;stream=null;old?.getTracks().forEach(t=>t.stop());
   const rec=recognition;recognition=null;rec?.abort();const ac=audio;audio=null;analyser=null;await ac?.close().catch(()=>{});
@@ -109,28 +110,30 @@ async function loop(now){
   try{
     analyser.getFloatTimeDomainData(wave);const rms=Math.sqrt(wave.reduce((s,v)=>s+v*v,0)/wave.length);
     $('volume').style.width=Math.min(100,rms*Number($('micGain').value)*700)+'%';
-    const wantBody=$('bodyTracking').checked&&now-lastPose>(inferenceCost>100?1500:500);
+    const wantBody=($('bodyTracking').checked||$('handTracking').checked)&&now-lastPose>($('handTracking').checked?250:inferenceCost>100?1500:500);
     const tracked=await tracker.detect(video,now,wantBody,$('handTracking').checked);
     if(!tracked||!running||token!==generation)return;
     inferenceCost=tracked.ms;
+    if(wantBody){armPose=tracked.body?.landmarks?.[0]||null;armPoseAt=now;lastPose=now;}
+    avatar.detailTargets.enabled=$('handTracking').checked;
+    if($('handTracking').checked&&armPose&&now-armPoseAt<900){
+      const detected=handTargets(tracked.hands,armPose,{flipX:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth});
+      for(const side of ['left','right'])if(detected[side]){avatar.detailTargets.hands[side]=detected[side];handSeen[side]=now;}
+    }
+    for(const side of ['left','right'])if(now-handSeen[side]>450)avatar.detailTargets.hands[side]=null;
+    if(now-lastDebug>500)$('detailStatus').textContent=armPose?`Hands: ${avatar.detailTargets.hands.left?'L':'—'} / ${avatar.detailTargets.hands.right?'R':'—'}`:'Keep shoulders and elbows in camera view';
     const result=tracked.result,landmarks=result.faceLandmarks[0];
     if(now-lastDebug>500){$('perf').textContent=`${Math.round(avatar.metrics.fps)} FPS · ${tracker.acceleration} ${Math.round(tracked.ms)} ms`;$('perf').title='Avatar rendering FPS and camera inference time';$('pointerStatus').textContent=`Rive pointer: ${avatar.pointer.source} · ${avatar.pointer.targetX.toFixed(0)}, ${avatar.pointer.targetY.toFixed(0)}`;}
     if(!landmarks){
       avatar.target.voice=0;
       $('faceStatus').textContent='NO FACE';$('mesh').getContext('2d').clearRect(0,0,640,480);
       // Brief lost detections hold position/size. Sustained loss releases mouth only.
-      if($('tracking').checked&&now-lastFace>300){avatar.detailTargets.hands={left:null,right:null};avatar.detailTargets.eyes=null;avatar.target.opening=0;avatar.target.pointerX=0;avatar.target.pointerY=0;avatar.target.x=0;avatar.target.y=0;avatar.target.bodyX=0;avatar.target.bodyY=0;avatar.target.bodyRoll=0;set('visemes',0);set('Expressions',0);set('poses',0);}
+      if($('tracking').checked&&now-lastFace>300){avatar.target.opening=0;avatar.target.pointerX=0;avatar.target.pointerY=0;avatar.target.x=0;avatar.target.y=0;avatar.target.bodyX=0;avatar.target.bodyY=0;avatar.target.bodyRoll=0;set('visemes',0);set('Expressions',0);set('poses',0);}
       return;
     }
     lastFace=now;if(now-lastOverlay>100){draw(landmarks);lastOverlay=now;}const measurement=measureFace(landmarks,result.facialTransformationMatrixes?.[0]?.data);if(!measurement)return;
     const b=Object.fromEntries((result.faceBlendshapes[0]?.categories||[]).map(c=>[c.categoryName,c.score]));
     const h=head.update(measurement,now,{sensitivity:Number($('sensitivity').value),autoSize:$('autoSize').checked,currentSize:values['sizing ']??0});
-    if($('handTracking').checked&&tracked.hands){
-      const detected=handTargets(tracked.hands,h.m,{flipX:$('flipHorizontal').checked,referenceSpan:head.neutral?.span});
-      for(const side of ['left','right'])if(detected[side]){avatar.detailTargets.hands[side]=detected[side];handSeen[side]=now;}
-    }
-    for(const side of ['left','right'])if(now-handSeen[side]>650)avatar.detailTargets.hands[side]=null;
-    if(now-lastDebug>500)$('detailStatus').textContent=`Hands: ${avatar.detailTargets.hands.left?'L':'—'} / ${avatar.detailTargets.hands.right?'R':'—'}`;
     const lip=lips.update(b,h.m,rms,now,{gain:Number($('micGain').value)});
     avatar.target.voice=lip.speaking?Math.max(0,Math.min(1,(lip.level-lip.gate)/Math.max(.025,lip.gate*3))):0;
     $('faceStatus').textContent=h.ready?'FACE TRACKED':`CALIBRATING ${Math.round(h.progress*100)}%`;

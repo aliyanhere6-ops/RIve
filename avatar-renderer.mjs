@@ -22,7 +22,7 @@ export async function createAvatar(canvas, onState) {
   const pointerCenter=pointerNode?{x:pointerNode.x,y:pointerNode.y}:{x:250,y:154};
   const pointer={available:!!pointerNode,source:'neutral',x:pointerCenter.x,y:pointerCenter.y,targetX:pointerCenter.x,targetY:pointerCenter.y,events:0};
   const pointerMotion=new PointerMotion();
-  const detailTargets={hands:{left:null,right:null},eyes:null};
+  const detailTargets={hands:{left:null,right:null},eyes:null,enabled:false};
   const detailNodes={left:artboard.node('hand left'),right:artboard.node('hand  right')};
   const eyeNodes={left:artboard.node('eyeboll left'),right:artboard.node('eyeboll right')};
   const eyeAnchors={left:artboard.node('Left Eye Gaze Anchor'),right:artboard.node('Right Eye Gaze Anchor')};
@@ -89,17 +89,17 @@ export async function createAvatar(canvas, onState) {
     artboard.advance(dt);
     for(const side of ['left','right']){
       const node=detailNodes[side],s=detailState[side];if(!node||!s)continue;
-      const goal=target.enabled?detailTargets.hands[side]:null;
+      const goal=(target.enabled||detailTargets.enabled)?detailTargets.hands[side]:null;
       const matrix=shoulders[side]?.worldTransform();
       const shoulder=matrix?{x:matrix.tx,y:matrix.ty}:{x:side==='left'?310:190,y:290};matrix?.delete?.();
       s.shoulder??=shoulder;
       const rest={x:s.base.x+shoulder.x-s.shoulder.x,y:s.base.y+shoulder.y-s.shoulder.y};
-      // The long sleeve rig needs elbow clearance; a near-shoulder wrist folds it inside out.
-      const safeGoal=goal?{x:side==='left'?Math.max(shoulder.x-25,goal.x):Math.min(shoulder.x+25,goal.x),y:goal.y}:null;
-      const bounded=safeGoal?armReach(safeGoal,shoulder,235,160):rest;
+      // Camera offsets are relative to the matching shoulder, independent of face position.
+      const safeGoal=goal?(goal.relative?{x:shoulder.x+goal.x,y:shoulder.y+goal.y}:goal):null;
+      const bounded=safeGoal?armReach(safeGoal,shoulder,235,85):rest;
       const smooth=s.motion.update(bounded,dt,!!goal);
       // Reapply reach after smoothing: moving shoulders cannot leave a wrist outside its chain.
-      const point=goal?armReach(smooth,shoulder,235,160):smooth;
+      const point=goal?armReach(smooth,shoulder,235,85):smooth;
       node.x=point.x;node.y=point.y;node.rotation=s.base.r;
       details.hands[side]={x:node.x,y:node.y,tracked:!!goal,shoulder,reach:Math.hypot(point.x-shoulder.x,point.y-shoulder.y)};
     }
