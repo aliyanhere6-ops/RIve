@@ -1,5 +1,6 @@
 import {HairMotion} from './hair-motion.mjs';
 import {rigPointer,PointerMotion} from './pointer-mapping.mjs';
+import {colorNumber} from './detail-tracking.mjs';
 // Keep the authored state machine/data bindings, then blend tracking poses before drawing.
 export async function createAvatar(canvas, onState) {
   const base=new URL('./vendor/',import.meta.url).href;
@@ -21,6 +22,15 @@ export async function createAvatar(canvas, onState) {
   const pointerCenter=pointerNode?{x:pointerNode.x,y:pointerNode.y}:{x:250,y:154};
   const pointer={available:!!pointerNode,source:'neutral',x:pointerCenter.x,y:pointerCenter.y,targetX:pointerCenter.x,targetY:pointerCenter.y,events:0};
   const pointerMotion=new PointerMotion();
+  const detailTargets={hands:{left:null,right:null},eyes:null};
+  const detailNodes={left:artboard.node('hand left'),right:artboard.node('hand  right')};
+  const eyeNodes={left:artboard.node('eyeboll left'),right:artboard.node('eyeboll right')};
+  const eyeAnchors={left:artboard.node('Left Eye Gaze Anchor'),right:artboard.node('Right Eye Gaze Anchor')};
+  const detailState={};
+  for(const side of ['left','right']){const node=detailNodes[side];if(node)detailState[side]={x:node.x,y:node.y,r:node.rotation,base:{x:node.x,y:node.y,r:node.rotation},ex:0,ey:0};}
+  const bgTransparent=instance.number('bg_transparent'),bgColor=instance.color('bg_colour');
+  if(!bgTransparent||!bgColor)throw Error('Updated Rive background properties missing');
+  const details={handsAvailable:!!detailNodes.left&&!!detailNodes.right,eyesAvailable:!!eyeNodes.left&&!!eyeNodes.right,hands:{},eyes:{}};
   const hair=artboard.node('Hair Motion'),hairMotion=new HairMotion();
   let hairBase=hair?{y:hair.y,rotation:hair.rotation}:null;
   let torsoBase=torso?{x:torso.x,y:torso.y,rotation:torso.rotation}:null;
@@ -75,12 +85,29 @@ export async function createAvatar(canvas, onState) {
       const sway=hairMotion.update(dt,now/1000,{voice:target.voice,head:x,strength:target.hairStrength,enabled:target.hairEnabled});
       hair.y+=sway.y;hair.rotation+=sway.rotation;
     }
+    for(const side of ['left','right']){
+      const node=detailNodes[side],s=detailState[side];if(!node||!s)continue;
+      const goal=target.enabled?detailTargets.hands[side]:null,follow=1-Math.exp(-dt/(goal?.1:.25));
+      s.x+=((goal?.x??s.base.x)-s.x)*follow;s.y+=((goal?.y??s.base.y)-s.y)*follow;
+      const rotation=s.base.r+(goal?.rotation??0)*(side==='left'?-1:1);
+      s.r+=(rotation-s.r)*follow;node.x=s.x;node.y=s.y;node.rotation=s.r;
+      details.hands[side]={x:node.x,y:node.y,tracked:!!goal};
+    }
     artboard.advance(dt);
+    // Anchor gaze in each animated eye's world space so head translation stays intact.
+    for(const side of ['left','right']){
+      const node=eyeNodes[side],anchor=eyeAnchors[side],s=detailState[side];if(!node||!anchor||!s)continue;
+      const gaze=target.enabled?detailTargets.eyes?.[side]:null,follow=1-Math.exp(-dt/.065);
+      s.ex+=((gaze?.x??0)-s.ex)*follow;s.ey+=((gaze?.y??0)-s.ey)*follow;
+      const matrix=anchor.worldTransform();node.x=matrix.tx+s.ex*8;node.y=matrix.ty+s.ey*6;matrix.delete?.();
+      details.eyes[side]={x:node.x,y:node.y,gazeX:s.ex,gazeY:s.ey,tracked:!!gaze};
+    }
+    artboard.advance(0);
     if(pointerNode){pointer.targetX=pointerNode.x;pointer.targetY=pointerNode.y;}
     renderer.clear();renderer.save();
     renderer.align(runtime.Fit.contain,runtime.Alignment.center,{minX:0,minY:0,maxX:canvas.width,maxY:canvas.height},artboard.bounds);
     artboard.draw(renderer);renderer.restore();metrics.drawMs=metrics.drawMs*.9+(performance.now()-start)*.1;raf=runtime.requestAnimationFrame(frame);
   }
   raf=runtime.requestAnimationFrame(frame);
-  return {loaded:true,target,metrics,pointer,hairAvailable:!!hair,bodyAvailable:!!torso,number:name=>instance.number(name),resizeDrawingSurfaceToCanvas:resize,dispose(){disposed=true;runtime.cancelAnimationFrame(raf);observer.disconnect();for(const a of animations.values())a.delete();machine.delete();artboard.delete();renderer.delete();instance.unref();file.unref();}};
+  return {loaded:true,target,metrics,pointer,details,detailTargets,background:{setTransparent:on=>{bgTransparent.value=on?1:0;},setColor:hex=>{bgColor.value=colorNumber(hex);},get transparent(){return bgTransparent.value;},get color(){return bgColor.value;}},hairAvailable:!!hair,bodyAvailable:!!torso,number:name=>instance.number(name),resizeDrawingSurfaceToCanvas:resize,dispose(){disposed=true;runtime.cancelAnimationFrame(raf);observer.disconnect();for(const a of animations.values())a.delete();machine.delete();artboard.delete();renderer.delete();instance.unref();file.unref();}};
 }

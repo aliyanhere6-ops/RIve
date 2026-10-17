@@ -11,7 +11,7 @@ export function createTrackingClient(){
   };
   worker.onerror=event=>fail(Error(event.message||'Tracking worker failed'));
   worker.postMessage({type:'init'});
-  return {ready,get acceleration(){return acceleration;},get busy(){return !!pending;},async detect(video,now,body){
+  return {ready,get acceleration(){return acceleration;},get busy(){return !!pending;},async detect(video,now,body,hands=false){
     if(disposed||pending)return null;
     // Only one image in flight: slow inference drops camera frames, never queues them.
     const frameId=++id;
@@ -21,7 +21,7 @@ export function createTrackingClient(){
       const width=384,height=Math.round(width*video.videoHeight/video.videoWidth);
       const image=await createImageBitmap(video,{resizeWidth:width,resizeHeight:height});
       if(disposed){image.close();throw Error('Tracking stopped');}
-      worker.postMessage({type:'frame',id:frameId,image,now,body},[image]);
+      worker.postMessage({type:'frame',id:frameId,image,now,body,hands},[image]);
     }catch(error){pending=null;reject(error);}
     return result;
   },dispose(){disposed=true;worker.terminate();pending?.resolve(null);pending=null;}};

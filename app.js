@@ -2,6 +2,7 @@ import {HeadTracker,LipTracker,Dwell,measureFace} from './tracking-core.mjs';
 import {createAvatar} from './avatar-renderer.mjs';
 import {facePointer} from './pointer-mapping.mjs';
 import {createTrackingClient} from './tracking-client.mjs';
+import {eyeGaze,handTargets} from './detail-tracking.mjs';
 const $=id=>document.getElementById(id);
 const names=['idle','L','R','TH','FV','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink','shocked','angry'];
 const fields=[['visemes',15],['Expressions',12],['poses',3],['sizing ',2],['xy',5]];
@@ -14,6 +15,19 @@ let inferenceEnd=0,inferenceCost=0;
 let head=new HeadTracker(),lips=new LipTracker(),poseFilter=new Dwell(0,200),expressionFilter=new Dwell(0,220);
 const wave=new Float32Array(1024);
 const message=t=>$('message').textContent=t,status=t=>$('status').textContent=t;
+const detailPanel=document.createElement('section');detailPanel.className='panel rig-details';
+detailPanel.innerHTML=`<div class="tag"><span>03 / HANDS, EYES & BACKGROUND</span></div>
+<label class="toggle"><span>Hand tracking<small>Your hands drive the new Rive targets</small></span><input id="handTracking" type="checkbox" checked></label>
+<label class="toggle"><span>Eye gaze<small>Eyeballs follow where you look</small></span><input id="eyeTracking" type="checkbox" checked></label>
+<p id="detailStatus" class="muted">Hands & eyes · waiting for camera</p><div class="divider"></div>
+<label class="toggle"><span>Transparent background<small>Off: background visible · On: transparent</small></span><input id="bgTransparent" type="checkbox"></label>
+<label class="background-color"><span>Background colour<small id="bgColorLabel">#FFFFFF</small></span><input id="bgColor" aria-label="Background colour" type="color" value="#ffffff"></label>`;
+document.querySelector('aside').insertBefore(detailPanel,document.querySelector('aside .advanced'));
+$('bgTransparent').onchange=()=>{avatar?.background.setTransparent($('bgTransparent').checked);$('bgColor').disabled=$('bgTransparent').checked;};
+$('bgColor').oninput=()=>{avatar?.background.setColor($('bgColor').value);$('bgColorLabel').textContent=$('bgColor').value.toUpperCase();};
+$('handTracking').onchange=()=>{if(avatar)avatar.detailTargets.hands={left:null,right:null};};
+$('eyeTracking').onchange=()=>{if(avatar)avatar.detailTargets.eyes=null;};
+let handSeen={left:0,right:0};
 for(const [key,max] of fields){
   const row=document.createElement('div');row.className='control';
   const label=document.createElement('div'),text=document.createElement('span'),out=document.createElement('output'),input=document.createElement('input');
@@ -47,7 +61,7 @@ async function loadModels(){
   if(!tracker)tracker=createTrackingClient();
   try{await tracker.ready;}catch(error){tracker.dispose();tracker=null;throw error;}
 }
-function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;}set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
+function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;avatar.detailTargets.hands={left:null,right:null};avatar.detailTargets.eyes=null;}handSeen={left:0,right:0};set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
 async function stop(){
   running=false;generation++;const old=stream;stream=null;old?.getTracks().forEach(t=>t.stop());
   const rec=recognition;recognition=null;rec?.abort();const ac=audio;audio=null;analyser=null;await ac?.close().catch(()=>{});
@@ -98,7 +112,7 @@ async function loop(now){
     analyser.getFloatTimeDomainData(wave);const rms=Math.sqrt(wave.reduce((s,v)=>s+v*v,0)/wave.length);
     $('volume').style.width=Math.min(100,rms*Number($('micGain').value)*700)+'%';
     const wantBody=$('bodyTracking').checked&&now-lastPose>(inferenceCost>100?1500:500);
-    const tracked=await tracker.detect(video,now,wantBody);
+    const tracked=await tracker.detect(video,now,wantBody,$('handTracking').checked);
     if(!tracked||!running||token!==generation)return;
     inferenceCost=tracked.ms;
     const result=tracked.result,landmarks=result.faceLandmarks[0];
@@ -107,12 +121,19 @@ async function loop(now){
       avatar.target.voice=0;
       $('faceStatus').textContent='NO FACE';$('mesh').getContext('2d').clearRect(0,0,640,480);
       // Brief lost detections hold position/size. Sustained loss releases mouth only.
-      if($('tracking').checked&&now-lastFace>300){avatar.target.opening=0;avatar.target.pointerX=0;avatar.target.pointerY=0;avatar.target.x=0;avatar.target.y=0;avatar.target.bodyX=0;avatar.target.bodyY=0;avatar.target.bodyRoll=0;set('visemes',0);set('Expressions',0);set('poses',0);}
+      if($('tracking').checked&&now-lastFace>300){avatar.detailTargets.hands={left:null,right:null};avatar.detailTargets.eyes=null;avatar.target.opening=0;avatar.target.pointerX=0;avatar.target.pointerY=0;avatar.target.x=0;avatar.target.y=0;avatar.target.bodyX=0;avatar.target.bodyY=0;avatar.target.bodyRoll=0;set('visemes',0);set('Expressions',0);set('poses',0);}
       return;
     }
     lastFace=now;if(now-lastOverlay>100){draw(landmarks);lastOverlay=now;}const measurement=measureFace(landmarks,result.facialTransformationMatrixes?.[0]?.data);if(!measurement)return;
     const b=Object.fromEntries((result.faceBlendshapes[0]?.categories||[]).map(c=>[c.categoryName,c.score]));
     const h=head.update(measurement,now,{sensitivity:Number($('sensitivity').value),autoSize:$('autoSize').checked,currentSize:values['sizing ']??0});
+    avatar.detailTargets.eyes=$('eyeTracking').checked?eyeGaze(landmarks,b):null;
+    if($('handTracking').checked&&tracked.hands){
+      const detected=handTargets(tracked.hands,h.m,{flipX:$('flipHorizontal').checked});
+      for(const side of ['left','right'])if(detected[side]){avatar.detailTargets.hands[side]=detected[side];handSeen[side]=now;}
+    }
+    for(const side of ['left','right'])if(now-handSeen[side]>350)avatar.detailTargets.hands[side]=null;
+    if(now-lastDebug>500)$('detailStatus').textContent=`Hands: ${avatar.detailTargets.hands.left?'L':'—'} / ${avatar.detailTargets.hands.right?'R':'—'} · Eyes: ${avatar.detailTargets.eyes?'tracking':'off'}`;
     const lip=lips.update(b,h.m,rms,now,{gain:Number($('micGain').value)});
     avatar.target.voice=lip.speaking?Math.max(0,Math.min(1,(lip.level-lip.gate)/Math.max(.025,lip.gate*3))):0;
     $('faceStatus').textContent=h.ready?'FACE TRACKED':`CALIBRATING ${Math.round(h.progress*100)}%`;

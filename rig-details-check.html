@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><title>Hand, eye and background integration check</title><body style="background:#171923;color:white;font:14px system-ui"><h1 id="result">Checking upgraded Rive…</h1><pre id="detail"></pre><canvas id="avatar" style="width:500px;height:499px"></canvas><script type="module">
+import {createAvatar} from './avatar-renderer.mjs';
+const result=document.getElementById('result'),canvas=document.getElementById('avatar');
+try{
+const a=await createAvatar(canvas,()=>{});a.number('xy').value=1;
+if(!a.details.handsAvailable||!a.details.eyesAvailable)throw Error('Exported hand/eye targets missing');
+for(const name of ['visemes','Expressions','poses','sizing ','xy'])if(!a.number(name))throw Error(name+' missing');
+const wait=()=>new Promise(resolve=>setTimeout(resolve,700));
+a.background.setColor('#ff2255');await wait();
+if((a.background.color>>>0)!==0xffff2255)throw Error('Background colour binding failed: '+a.background.color);
+const ctx=canvas.getContext('2d');const alpha=()=>{const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;let n=0;for(let i=3;i<data.length;i+=4)if(data[i]>240)n++;return n;};
+const opaque=alpha();a.background.setTransparent(true);await wait();
+if(a.background.transparent!==1||alpha()>=opaque*.95)throw Error('Background transparency did not remove artwork');
+a.target.enabled=true;a.detailTargets.hands={left:{x:380,y:250,rotation:.2},right:{x:120,y:250,rotation:-.2}};
+a.detailTargets.eyes={left:{x:.8,y:0},right:{x:.8,y:0}};await wait();
+if(Math.abs(a.details.hands.left.y-250)>2||Math.abs(a.details.hands.right.y-250)>2)throw Error('Hand targets did not move');
+const eyes=structuredClone(a.details.eyes);a.detailTargets.eyes={left:{x:-.8,y:0},right:{x:-.8,y:0}};await wait();
+document.getElementById('detail').textContent=JSON.stringify({before:eyes,after:a.details.eyes},null,2);
+if(eyes.left.gazeX-a.details.eyes.left.gazeX<1.5||eyes.right.gazeX-a.details.eyes.right.gazeX<1.5)throw Error('Eye targets did not move independently');
+document.getElementById('detail').textContent=JSON.stringify(a.details,null,2);
+result.textContent='PASS: both hand targets, both eyeball targets, colour and transparency render; existing properties preserved';
+window.addEventListener('pagehide',()=>a.dispose());
+}catch(e){result.textContent='FAIL: '+e.message;throw e;}
+</script>

@@ -8,9 +8,10 @@ globalThis.Worker=class {
 };
 globalThis.createImageBitmap=async()=>{captures++;return {close(){}};};
 const client=createTrackingClient();await client.ready;
-const first=client.detect({videoWidth:640,videoHeight:480},100,false);
+const first=client.detect({videoWidth:640,videoHeight:480},100,false,true);
 await Promise.resolve();
 assert.equal(client.busy,true);
+assert.equal(worker.frame.hands,true,'hand capture request reaches the worker');
 assert.equal(await client.detect({videoWidth:640,videoHeight:480},110,false),null);
 assert.equal(captures,1,'a slow detector must not accumulate camera frames');
 worker.onmessage({data:{type:'result',id:worker.frame.id,result:{faceLandmarks:[]},ms:200,acceleration:'CPU'}});
