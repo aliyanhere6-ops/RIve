@@ -43,7 +43,7 @@ export function measureFace(l,matrix) {
 
 export class HeadTracker {
   constructor() {
-    this.filters=Object.fromEntries(['x','y','yaw','pitch','span','opening','mouthWidth'].map(k=>[k,new Smooth(k==='span'?500:k==='opening'?40:75)]));
+    this.filters=Object.fromEntries(['x','y','yaw','pitch','span','opening','mouthWidth'].map(k=>[k,new Smooth(k==='span'?500:k==='opening'?40:40)]));
     this.neutral=null;this.calibration=[];this.ready=false;this.direction=new Dwell(1,70);this.size=new Dwell(0,1200);
   }
   calibrate() { this.calibration=[]; this.ready=false; this.neutral=null; }

@@ -1,5 +1,6 @@
-import {HeadTracker,LipTracker,Dwell,measureFace,mapDirection} from './tracking-core.mjs';
+import {HeadTracker,LipTracker,Dwell,measureFace} from './tracking-core.mjs';
 import {createAvatar} from './avatar-renderer.mjs';
+import {facePointer} from './pointer-mapping.mjs';
 import {createTrackingClient} from './tracking-client.mjs';
 const $=id=>document.getElementById(id);
 const names=['idle','L','R','TH','FV','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink','shocked','angry'];
@@ -18,6 +19,7 @@ for(const [key,max] of fields){
   const label=document.createElement('div'),text=document.createElement('span'),out=document.createElement('output'),input=document.createElement('input');
   text.textContent=key;out.textContent='0';label.append(text,out);
   Object.assign(input,{type:'range',min:0,max,value:0,step:1});input.setAttribute('aria-label',key);
+  if(key==='xy'){input.disabled=true;input.title='Disabled: head movement uses the Rive pointer rig';text.textContent='xy · off (pointer only)';}
   row.append(label,input);$('controls').append(row);sliders[key]={input,out};
   input.oninput=()=>{
     // Adjusting size must not silently disable head/mouth tracking.
@@ -27,6 +29,7 @@ for(const [key,max] of fields){
   };
 }
 function set(key,n){
+  if(key==='xy')n=1; // Hold the legacy directional binding at its neutral state.
   if(values[key]===n)return;
   values[key]=n;if(props[key])props[key].value=n;
   sliders[key].input.value=n;sliders[key].out.textContent=String(n);
@@ -35,7 +38,7 @@ function set(key,n){
 window.studio={values,set,get avatar(){return avatar},get properties(){return Object.keys(props)}};
 createAvatar($('avatar'),states=>{$('states').textContent='Rive: '+states.join(', ');}).then(result=>{
   avatar=result;
-  for(const [key]of fields){props[key]=avatar.number(key);if(!props[key])throw Error('Missing property '+key);props[key].value=0;set(key,0);}
+  for(const [key]of fields){props[key]=avatar.number(key);if(!props[key])throw Error('Missing property '+key);set(key,key==='xy'?1:0);}
   $('start').disabled=false;status('Character ready');message('Start performance, then look straight ahead during calibration.');
 }).catch(e=>{status('Avatar load failed');message(e.message);});
 
@@ -88,7 +91,7 @@ function draw(l){
 }
 async function loop(now){
   if(!running)return;requestAnimationFrame(loop);
-  const video=$('camera');if(inferenceBusy||now-inferenceEnd<Math.min(180,Math.max(35,inferenceCost*.4))||now-lastTick<42||video.readyState<2||video.currentTime===lastFrame)return;
+  const video=$('camera');if(inferenceBusy||now-inferenceEnd<Math.min(45,Math.max(8,inferenceCost*.12))||now-lastTick<42||video.readyState<2||video.currentTime===lastFrame)return;
   lastTick=now;lastFrame=video.currentTime;
   const token=generation;inferenceBusy=true;
   try{
@@ -99,12 +102,12 @@ async function loop(now){
     if(!tracked||!running||token!==generation)return;
     inferenceCost=tracked.ms;
     const result=tracked.result,landmarks=result.faceLandmarks[0];
-    if(now-lastDebug>500){$('perf').textContent=`${Math.round(avatar.metrics.fps)} FPS · ${tracker.acceleration} ${Math.round(tracked.ms)} ms`;$('perf').title='Avatar rendering FPS and camera inference time';}
+    if(now-lastDebug>500){$('perf').textContent=`${Math.round(avatar.metrics.fps)} FPS · ${tracker.acceleration} ${Math.round(tracked.ms)} ms`;$('perf').title='Avatar rendering FPS and camera inference time';$('pointerStatus').textContent=`Rive pointer: ${avatar.pointer.source} · ${avatar.pointer.targetX.toFixed(0)}, ${avatar.pointer.targetY.toFixed(0)}`;}
     if(!landmarks){
       avatar.target.voice=0;
       $('faceStatus').textContent='NO FACE';$('mesh').getContext('2d').clearRect(0,0,640,480);
       // Brief lost detections hold position/size. Sustained loss releases mouth only.
-      if($('tracking').checked&&now-lastFace>300){avatar.target.opening=0;avatar.target.x=0;avatar.target.y=0;avatar.target.bodyX=0;avatar.target.bodyY=0;avatar.target.bodyRoll=0;set('visemes',0);set('Expressions',0);set('poses',0);}
+      if($('tracking').checked&&now-lastFace>300){avatar.target.opening=0;avatar.target.pointerX=0;avatar.target.pointerY=0;avatar.target.x=0;avatar.target.y=0;avatar.target.bodyX=0;avatar.target.bodyY=0;avatar.target.bodyRoll=0;set('visemes',0);set('Expressions',0);set('poses',0);}
       return;
     }
     lastFace=now;if(now-lastOverlay>100){draw(landmarks);lastOverlay=now;}const measurement=measureFace(landmarks,result.facialTransformationMatrixes?.[0]?.data);if(!measurement)return;
@@ -133,8 +136,9 @@ async function loop(now){
     avatar.target.enabled=true;
     avatar.target.x=Math.max(-1,Math.min(1,h.yaw*4))*($('flipHorizontal').checked?-1:1);
     avatar.target.y=Math.max(-1,Math.min(1,h.pitch*4))*($('flipVertical').checked?-1:1);
-    const direction=mapDirection(h.xy,$('flipHorizontal').checked,$('flipVertical').checked);
-    set('xy',direction);if($('autoSize').checked)set('sizing ',h.size);
+    const facePoint=facePointer(h.m,head.neutral,{flipX:$('flipHorizontal').checked,flipY:$('flipVertical').checked,sensitivity:Number($('sensitivity').value)});
+    avatar.target.pointerX=facePoint.x;avatar.target.pointerY=facePoint.y;
+    if($('autoSize').checked)set('sizing ',h.size);
     let viseme=lip.viseme;
     // Wink is deliberate only; normal blinking and eyebrow motion cannot interrupt speech.
     if($('faceExpressions').checked&&!lip.speaking&&lip.jaw<.12){
@@ -171,3 +175,4 @@ $('studioView').onclick=()=>{const clean=document.body.classList.toggle('stage-o
 document.querySelectorAll('[data-backdrop]').forEach(button=>button.onclick=()=>{document.querySelector('.stage').dataset.backdrop=button.dataset.backdrop;});
 $('hairMotion').onchange=()=>{if(avatar)avatar.target.hairEnabled=$('hairMotion').checked;};
 $('hairStrength').oninput=()=>{if(avatar)avatar.target.hairStrength=Number($('hairStrength').value);};
+$('rivePointer').onchange=()=>{if(avatar)avatar.target.pointerEnabled=$('rivePointer').checked;};

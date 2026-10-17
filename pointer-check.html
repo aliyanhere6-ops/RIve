@@ -1,0 +1,17 @@
+<!doctype html><html><meta charset="utf-8"><title>Rive pointer integration check</title><body style="background:#171923;color:#eee;font:15px system-ui"><h1>Head → Rive pointer check</h1><p id="result">Loading upgraded character…</p><pre id="coords"></pre><canvas id="check" style="width:600px;height:600px"></canvas><script type="module">
+import {createAvatar} from './avatar-renderer.mjs';
+const result=document.getElementById('result');let failed=false;
+window.addEventListener('error',e=>{failed=true;result.textContent='FAIL: '+e.message;});
+const avatar=await createAvatar(document.getElementById('check'),()=>{});
+if(!avatar.pointer.available)throw Error('Exported pointer target missing');
+for(const key of ['visemes','Expressions','poses','sizing ','xy'])if(!avatar.number(key))throw Error('Missing existing property: '+key);
+const center={x:avatar.pointer.targetX,y:avatar.pointer.targetY};let frames=0,passed=0;
+avatar.target.enabled=true;
+function tick(){if(failed)return;frames++;
+const phase=Math.floor(frames/45)%3;avatar.target.x=[.6,-.6,0][phase];avatar.target.y=[-.4,.4,0][phase];
+const p=avatar.pointer;
+document.getElementById('coords').textContent=`source=${p.source}; event=${p.x.toFixed(1)}, ${p.y.toFixed(1)}; actual Rive target=${p.targetX.toFixed(1)}, ${p.targetY.toFixed(1)}`;
+if(frames%45===40){if(Math.abs(p.targetX-p.x)>1||Math.abs(p.targetY-p.y)>1)throw Error('Pointer listener did not move its target');if(Math.abs(p.targetX-center.x)>10)passed++;}
+result.textContent=passed>=2?'PASS: head-driven pointer moves the authored Rive target in both directions; all five existing properties present.':'Testing authored pointer listener…';requestAnimationFrame(tick);}
+requestAnimationFrame(tick);window.addEventListener('pagehide',()=>avatar.dispose());
+</script></body></html>
