@@ -1,4 +1,6 @@
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+// Native chain: upper arm 134.5 + forearm 144.1 + wrist 31.8 = 310.4 units.
+export const ARM_REACH=300;
 export function eyeGaze(points,blendshapes={}){
   if(!points?.[477])return null;
   function eye(cornerA,cornerB,top,bottom,iris,blink){
@@ -14,10 +16,27 @@ export function eyeGaze(points,blendshapes={}){
   }
   return {right:eye(33,133,159,145,468,'eyeBlinkRight'),left:eye(362,263,386,374,473,'eyeBlinkLeft')};
 }
-export function handTargets(result,pose,{flipX=false,aspect=.75}={}){
+export function handTargets(result,pose,{flipX=false,aspect=.75,fallbackFace=null,previous={}}={}){
   const targets={left:null,right:null};
   const visible=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&(p.visibility??1)>.55;
-  if(!visible(pose?.[11])||!visible(pose?.[12]))return targets;
+  if(!visible(pose?.[11])||!visible(pose?.[12])){
+    // Close-up framing: use calibrated, fixed proportions rather than noisy live face size.
+    if(!fallbackFace?.span)return targets;
+    const span=fallbackFace.span,length=span*5.7;
+    const used=new Set();
+    for(const landmarks of result?.landmarks||[]){
+      const wrist=landmarks?.[0];if(!visible(wrist))continue;
+      const screenRight=(wrist.x-fallbackFace.x)*(flipX?-1:1)>0;
+      let side=screenRight?'left':'right';
+      const nearby=['left','right'].filter(s=>!used.has(s)&&Number.isFinite(previous[s]?.cameraX)).map(s=>({side:s,d:Math.hypot(wrist.x-previous[s].cameraX,wrist.y-previous[s].cameraY)})).sort((a,b)=>a.d-b.d);
+      if(nearby[0]?.d<.25)side=nearby[0].side;
+      if(used.has(side))side=side==='left'?'right':'left';used.add(side);
+      const shoulderX=fallbackFace.x+(side==='left'?1:-1)*(flipX?-1:1)*span*1.9;
+      const shoulderY=fallbackFace.y+span*2.4/aspect;
+      targets[side]={x:(wrist.x-shoulderX)*(flipX?-1:1)*ARM_REACH/length,y:(wrist.y-shoulderY)*aspect*ARM_REACH/length,relative:true,cameraX:wrist.x,cameraY:wrist.y};
+    }
+    return targets;
+  }
   const distance=(a,b)=>Math.hypot(a.x-b.x,(a.y-b.y)*aspect);
   const width=distance(pose[11],pose[12]);if(width<.08)return targets;
   const arms=[[11,13,15],[12,14,16]].map(([s,e,w])=>({shoulder:pose[s],elbow:pose[e],wrist:pose[w],hand:null}));
@@ -38,12 +57,12 @@ export function handTargets(result,pose,{flipX=false,aspect=.75}={}){
     const side=((shoulder.x-center)*(flipX?-1:1))<0?'right':'left';
     const measured=visible(elbow)&&visible(arm.wrist)?distance(shoulder,elbow)+distance(elbow,arm.wrist):width*1.4;
     const length=clamp(measured,width*1.05,width*1.8);
-    const scale=235/length;
-    targets[side]={x:(wrist.x-shoulder.x)*(flipX?-1:1)*scale,y:(wrist.y-shoulder.y)*aspect*scale,relative:true};
+    const scale=ARM_REACH/length;
+    targets[side]={x:(wrist.x-shoulder.x)*(flipX?-1:1)*scale,y:(wrist.y-shoulder.y)*aspect*scale,relative:true,cameraX:wrist.x,cameraY:wrist.y};
   }
   return targets;
 }
-export function armReach(point,shoulder,maxReach=235,minReach=65){
+export function armReach(point,shoulder,maxReach=ARM_REACH,minReach=65){
   const dx=point.x-shoulder.x,dy=point.y-shoulder.y,distance=Math.hypot(dx,dy);
   if(distance<.001)return {x:shoulder.x,y:shoulder.y+minReach};
   const reach=clamp(distance,minReach,maxReach);

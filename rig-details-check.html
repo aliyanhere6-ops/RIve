@@ -18,12 +18,17 @@ const eyes=structuredClone(a.details.eyes);a.detailTargets.eyes={left:{x:-.8,y:0
 document.getElementById('detail').textContent=JSON.stringify({before:eyes,after:a.details.eyes},null,2);
 if(a.details.eyes.left.gazeX!==0||a.details.eyes.right.gazeX!==0)throw Error('Removed eye tracking is still active');
 a.detailTargets.hands={left:{x:-400,y:-400},right:{x:900,y:900}};await wait();
-for(const side of ['left','right'])if(a.details.hands[side].reach>235.01)throw Error('Wrist escaped arm reach');
+for(const side of ['left','right'])if(a.details.hands[side].reach>300.01)throw Error('Wrist escaped arm reach');
 a.target.enabled=false;a.detailTargets.enabled=true;
 a.detailTargets.hands={left:{x:0,y:230,relative:true},right:{x:0,y:230,relative:true}};await wait();await wait();
 for(const side of ['left','right']){
  const h=a.details.hands[side];
  if(!h.tracked||Math.abs(h.x-h.shoulder.x)>5||Math.abs(h.y-h.shoulder.y-230)>5)throw Error('Hands must track their shoulders even without a face');
+}
+a.detailTargets.hands={left:null,right:null};await wait();await wait();
+for(const side of ['left','right']){
+ const h=a.details.hands[side];
+ if(Math.abs(h.y-h.shoulder.y-300)>5)throw Error('Resting arms must hang below their shoulders');
 }
 document.getElementById('detail').textContent=JSON.stringify(a.details,null,2);
 result.textContent='PASS: body-relative hands work without face detection; arm reach, disabled eye gaze and background controls preserved';

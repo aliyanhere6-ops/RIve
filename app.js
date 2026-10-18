@@ -116,8 +116,8 @@ async function loop(now){
     inferenceCost=tracked.ms;
     if(wantBody){armPose=tracked.body?.landmarks?.[0]||null;armPoseAt=now;lastPose=now;}
     avatar.detailTargets.enabled=$('handTracking').checked;
-    if($('handTracking').checked&&armPose&&now-armPoseAt<900){
-      const detected=handTargets(tracked.hands,armPose,{flipX:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth});
+    if($('handTracking').checked){
+      const detected=handTargets(tracked.hands,now-armPoseAt<900?armPose:null,{flipX:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth,fallbackFace:head.neutral,previous:avatar.detailTargets.hands});
       for(const side of ['left','right'])if(detected[side]){avatar.detailTargets.hands[side]=detected[side];handSeen[side]=now;}
     }
     for(const side of ['left','right'])if(now-handSeen[side]>450)avatar.detailTargets.hands[side]=null;

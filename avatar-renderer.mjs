@@ -1,6 +1,6 @@
 import {HairMotion} from './hair-motion.mjs';
 import {rigPointer,PointerMotion} from './pointer-mapping.mjs';
-import {colorNumber,armReach,HandMotion} from './detail-tracking.mjs';
+import {colorNumber,armReach,HandMotion,ARM_REACH} from './detail-tracking.mjs';
 // Keep the authored state machine/data bindings, then blend tracking poses before drawing.
 export async function createAvatar(canvas, onState) {
   const base=new URL('./vendor/',import.meta.url).href;
@@ -93,15 +93,15 @@ export async function createAvatar(canvas, onState) {
       const matrix=shoulders[side]?.worldTransform();
       const shoulder=matrix?{x:matrix.tx,y:matrix.ty}:{x:side==='left'?310:190,y:290};matrix?.delete?.();
       s.shoulder??=shoulder;
-      const rest={x:s.base.x+shoulder.x-s.shoulder.x,y:s.base.y+shoulder.y-s.shoulder.y};
+      const rest={x:shoulder.x+(side==='left'?18:-18),y:shoulder.y+ARM_REACH};
       // Camera offsets are relative to the matching shoulder, independent of face position.
       const safeGoal=goal?(goal.relative?{x:shoulder.x+goal.x,y:shoulder.y+goal.y}:goal):null;
-      const bounded=safeGoal?armReach(safeGoal,shoulder,235,85):rest;
+      const bounded=safeGoal?armReach(safeGoal,shoulder,ARM_REACH,85):rest;
       const smooth=s.motion.update(bounded,dt,!!goal);
       // Reapply reach after smoothing: moving shoulders cannot leave a wrist outside its chain.
-      const point=goal?armReach(smooth,shoulder,235,85):smooth;
+      const point=goal?armReach(smooth,shoulder,ARM_REACH,85):smooth;
       node.x=point.x;node.y=point.y;node.rotation=s.base.r;
-      details.hands[side]={x:node.x,y:node.y,tracked:!!goal,shoulder,reach:Math.hypot(point.x-shoulder.x,point.y-shoulder.y)};
+      details.hands[side]={x:node.x,y:node.y,tracked:!!goal,shoulder,rest,base:s.base,reach:Math.hypot(point.x-shoulder.x,point.y-shoulder.y)};
     }
     // Camera gaze is removed. Keep pupils centered inside their animated eyes.
     for(const side of ['left','right']){

@@ -28,11 +28,16 @@ const moved=handTargets(movedHand,translated);
 assert.ok(Math.abs(moved.right.x-a.right.x)<1e-6&&Math.abs(moved.right.y-a.right.y)<1e-6,'body translation cannot drag the arm target away from its shoulder');
 assert.deepEqual(handTargets(null,null),{left:null,right:null});
 assert.ok(handTargets(null,pose).right,'visible body wrist can bridge a missed palm detection');
+const closeup=handTargets(result,null,{fallbackFace:{x:.5,y:.4,span:.2}});
+assert.ok(closeup.right?.relative,'close-up camera framing still supports hand movement');
+const crossed=structuredClone(result);crossed.landmarks[0][0]={x:.52,y:.7};
+const history={right:{cameraX:.48,cameraY:.7}};
+assert.ok(handTargets(crossed,null,{fallbackFace:{x:.5,y:.4,span:.2},previous:history}).right,'one hand crossing center keeps its identity');
 console.log('PASS: iris direction, blink suppression, hand identity/mirroring, background ARGB');
 const shoulder={x:200,y:250};
 for(const point of [{x:-999,y:-999},{x:200,y:250},{x:900,y:900}]){
   const p=armReach(point,shoulder),distance=Math.hypot(p.x-200,p.y-250);
-  assert.ok(distance>=64.99&&distance<=235.01,'hand remains within IK chain reach');
+  assert.ok(distance>=64.99&&distance<=300.01,'hand remains within IK chain reach');
 }
 for(const rate of [24,30,60]){
   const motion=new HandMotion(0,0);let last=0;
