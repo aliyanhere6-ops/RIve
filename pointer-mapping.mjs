@@ -5,12 +5,12 @@ export class PointerMotion {
   constructor(){this.x=0;this.y=0;this.vx=0;this.vy=0;this.tx=0;this.ty=0;}
   update(x,y,dt){
     dt=clamp(Number.isFinite(dt)?dt:0,0,.1);
-    const omega=26,decay=Math.exp(-omega*dt);
+    const omega=30,decay=Math.exp(-omega*dt);
     for(const axis of ['x','y']){
       const value=axis==='x'?x:y;
       const desired=clamp(Number.isFinite(value)?value:0,-1,1);
       const t='t'+axis,v='v'+axis;
-      if(Math.abs(desired-this[t])>.012)this[t]+=clamp(desired-this[t],-6*dt,6*dt);
+      if(Math.abs(desired-this[t])>.01)this[t]+=clamp(desired-this[t],-9*dt,9*dt);
       const offset=this[axis]-this[t],c=this[v]+omega*offset;
       this[axis]=this[t]+(offset+c*dt)*decay;
       this[v]=(this[v]-omega*c*dt)*decay;

@@ -23,7 +23,7 @@ for(const rate of [24,30,60]){
   for(let i=0;i<rate*2;i++){
     const p=motion.update(1,-1,1/rate);
     assert.ok(p.x>=previous-1e-9&&p.x<=1,'step stays monotonic without overshoot');
-    assert.ok(p.x-previous<=6/rate+1e-8,'camera jumps remain bounded by elapsed time');previous=p.x;
+    assert.ok(p.x-previous<=9/rate+1e-8,'camera jumps remain bounded by elapsed time');previous=p.x;
   }
   assert.ok(motion.x>.98&&motion.y<-.98,'motion settles across camera rates');
   for(let i=0;i<rate*2;i++)motion.update(0,0,1/rate);
