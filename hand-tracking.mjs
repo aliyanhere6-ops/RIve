@@ -17,39 +17,30 @@ export class HandMotion{
     return {x:this.x,y:this.y};
   }
 }
-// Drive the user's existing Rive targets from shoulder-relative elbow positions.
-export function mapHands(_hands,pose,{mirror=true,aspect=.75}={}){
-  const out={left:null,right:null};
-  const valid=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&(p.visibility??1)>.55;
-  if(!valid(pose?.[11])||!valid(pose?.[12]))return out;
-  const width=Math.hypot(pose[11].x-pose[12].x,(pose[11].y-pose[12].y)*aspect);
-  if(width<.08)return out;
-  const mid=(pose[11].x+pose[12].x)/2,sign=mirror?-1:1,scale=294/(width*1.55);
-  for(const [s,e] of [[11,13],[12,14]]){
-    const shoulder=pose[s],elbow=pose[e];if(!valid(elbow))continue;
-    const side=(shoulder.x-mid)*sign>0?'left':'right';
-    out[side]={x:(elbow.x-shoulder.x)*sign*scale,y:(elbow.y-shoulder.y)*aspect*scale};
-  }
-  return out;
-}
 
-// Calibrate elbow offsets; do not replace an authored hand position with an elbow position.
+// Retarget both arm segments independently, preserving the authored bone lengths.
+export function mapHands(_hands,pose,{mirror=true,aspect=.75}={}){
+ const out={left:null,right:null};
+ const valid=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&(p.visibility??1)>.55;
+ if(!valid(pose?.[11])||!valid(pose?.[12]))return out;
+ const mid=(pose[11].x+pose[12].x)/2,sign=mirror?-1:1;
+ const direction=(a,b)=>{const x=(b.x-a.x)*sign,y=(b.y-a.y)*aspect,d=Math.hypot(x,y);return d>.025?{x:x/d,y:y/d}:null;};
+ for(const [s,e,w] of [[11,13,15],[12,14,16]]){
+   if(!valid(pose[e])||!valid(pose[w]))continue;
+   const upper=direction(pose[s],pose[e]),lower=direction(pose[e],pose[w]);if(!upper||!lower)continue;
+   const side=(pose[s].x-mid)*sign>0?'left':'right';
+   out[side]={x:upper.x*134.5048+lower.x*175.9123,y:upper.y*134.5048+lower.y*175.9123,angle:Math.atan2(lower.y,lower.x),upper,lower,bendInverse:(upper.x*lower.y-upper.y*lower.x)*(side==='left'?1:-1)<0};
+ }
+ return out;
+}
 export class ElbowTracker{
-  constructor(){this.sides={};}
-  update(pose,now,options={}){
-    const measured=mapHands(null,pose,options),out={left:null,right:null};
-    for(const side of ['left','right']){
-      const p=measured[side];let state=this.sides[side];
-      if(!p){if(state&&now-state.last<180)out[side]=state.output;continue;}
-      if(!state)state=this.sides[side]={start:now,last:now,count:0,x:0,y:0,base:null,output:null};
-      state.last=now;
-      if(!state.base){
-        state.x+=p.x;state.y+=p.y;state.count++;
-        if(now-state.start>=650&&state.count>=6)state.base={x:state.x/state.count,y:state.y/state.count};
-        else continue;
-      }
-      state.output={x:p.x-state.base.x,y:p.y-state.base.y,relativeToRest:true};out[side]=state.output;
-    }
-    return out;
-  }
+ constructor(){this.sides={};}
+ update(pose,now,options={}){
+   const measured=mapHands(null,pose,options),out={left:null,right:null};
+   for(const side of ['left','right']){
+     if(measured[side])this.sides[side]={last:now,output:measured[side]};
+     const state=this.sides[side];if(state&&now-state.last<250)out[side]=state.output;
+   }
+   return out;
+ }
 }

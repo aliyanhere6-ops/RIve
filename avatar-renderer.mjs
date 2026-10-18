@@ -28,7 +28,7 @@ export async function createAvatar(canvas, onState) {
   for(const side of ['left','right']){
     const node=artboard.node(side==='left'?'hand left':'hand  right');
     const shoulder=artboard.rootBone(side==='left'?'Left Arm Shoulder':'Right Arm Shoulder');
-    if(node&&shoulder){const m=node.worldTransform();handRig[side]={node,shoulder,base:{x:node.x,y:node.y},motion:new HandMotion(m.tx,m.ty)};m.delete();}
+    if(node&&shoulder){const m=node.worldTransform();handRig[side]={node,shoulder,base:{x:node.x,y:node.y,r:node.rotation},rotation:node.rotation,motion:new HandMotion(m.tx,m.ty)};m.delete();}
   }
   hands.available=!!handRig.left&&!!handRig.right;
   const hair=artboard.node('Hair Motion'),hairMotion=new HairMotion();
@@ -50,7 +50,7 @@ export async function createAvatar(canvas, onState) {
     // Remove last frame's procedural offset before advancing authored animations.
     if(torso&&torsoBase){torso.x=torsoBase.x;torso.y=torsoBase.y;torso.rotation=torsoBase.rotation;}
     if(hair&&hairBase){hair.y=hairBase.y;hair.rotation=hairBase.rotation;}
-    for(const rig of Object.values(handRig)){rig.node.x=rig.base.x;rig.node.y=rig.base.y;}
+    for(const rig of Object.values(handRig)){rig.node.x=rig.base.x;rig.node.y=rig.base.y;rig.node.rotation=rig.base.r;}
     if(pointer.available){
       const active=target.pointerEnabled&&target.enabled;
       const motion=pointerMotion.update(active?(target.pointerX??target.x):0,active?(target.pointerY??target.y):0,dt);
@@ -89,16 +89,24 @@ export async function createAvatar(canvas, onState) {
     artboard.advance(dt);
     for(const [side,rig] of Object.entries(handRig)){
       const {node,shoulder}=rig;
-      rig.base={x:node.x,y:node.y};
+      rig.base={x:node.x,y:node.y,r:node.rotation};
       const sm=shoulder.worldTransform(),pm=new runtime.Mat2D(),rest=node.worldTransform();
       node.parentWorldTransform(pm);
       const anchor={x:sm.tx,y:sm.ty};
       const goal=hands.enabled&&now-hands.updatedAt<350?hands.targets[side]:null;
+      apply('Camera '+(side==='left'?'Left':'Right')+' Bend '+(goal?.bendInverse?'B':'A'));
       const safe=goal?limitReach({x:(goal.relativeToRest?rest.tx:anchor.x)+goal.x,y:(goal.relativeToRest?rest.ty:anchor.y)+goal.y},anchor):{x:rest.tx,y:rest.ty};
       const smooth=rig.motion.update(safe,dt);
       const point=goal?limitReach(smooth,anchor):smooth;
       const local=worldToParent(point,pm);
       if(local){node.x=local.x;node.y=local.y;}
+      let wanted=rig.base.r;
+      if(goal&&Number.isFinite(goal.angle)){
+        const direction=worldToParent({x:pm.tx-Math.cos(goal.angle),y:pm.ty-Math.sin(goal.angle)},pm);
+        wanted=Math.atan2(direction.y,direction.x)-Math.atan2(-31.7285*node.scaleY,2.54745*node.scaleX);
+      }
+      const diff=Math.atan2(Math.sin(wanted-rig.rotation),Math.cos(wanted-rig.rotation));
+      rig.rotation+=diff*(1-Math.exp(-dt/.075));node.rotation=rig.rotation;
       hands.details[side]={tracked:!!goal,world:point,local,anchor,reach:Math.hypot(point.x-anchor.x,point.y-anchor.y)};
       sm.delete();pm.delete();rest.delete();
     }
