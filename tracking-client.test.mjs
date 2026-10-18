@@ -3,14 +3,14 @@ import {createTrackingClient} from './tracking-client.mjs';
 let worker,captures=0;
 globalThis.Worker=class {
   constructor(){worker=this;}
-  postMessage(data){if(data.type==='init')queueMicrotask(()=>this.onmessage({data:{type:'ready',acceleration:'CPU'}}));else this.frame=data;}
+  postMessage(data){if(data.type==='init')queueMicrotask(()=>this.onmessage({data:{type:'ready',acceleration:'CPU',handsAvailable:true}}));else this.frame=data;}
   terminate(){this.terminated=true;}
 };
 globalThis.createImageBitmap=async()=>{captures++;return {close(){}};};
-const client=createTrackingClient();await client.ready;
-const first=client.detect({videoWidth:640,videoHeight:480},100,false);
+const client=createTrackingClient();await client.ready;assert.equal(client.handsAvailable,true);
+const first=client.detect({videoWidth:640,videoHeight:480},100,false,true);
 await Promise.resolve();
-assert.equal(client.busy,true);
+assert.equal(client.busy,true);assert.equal(worker.frame.hands,true,'hand request reaches the worker');
 assert.equal(await client.detect({videoWidth:640,videoHeight:480},110,false),null);
 assert.equal(captures,1,'a slow detector must not accumulate camera frames');
 worker.onmessage({data:{type:'result',id:worker.frame.id,result:{faceLandmarks:[]},ms:200,acceleration:'CPU'}});

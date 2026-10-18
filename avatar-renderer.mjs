@@ -1,3 +1,4 @@
+import {HandMotion,worldToParent,limitReach} from './hand-tracking.mjs';
 import {HairMotion} from './hair-motion.mjs';
 import {rigPointer,PointerMotion} from './pointer-mapping.mjs';
 // Keep the authored state machine/data bindings, then blend tracking poses before drawing.
@@ -21,6 +22,15 @@ export async function createAvatar(canvas, onState) {
   const pointerCenter=pointerNode?{x:pointerNode.x,y:pointerNode.y}:{x:250,y:154};
   const pointer={available:!!pointerNode,source:'neutral',x:pointerCenter.x,y:pointerCenter.y,targetX:pointerCenter.x,targetY:pointerCenter.y,events:0};
   const pointerMotion=new PointerMotion();
+  const hands={enabled:false,targets:{left:null,right:null},updatedAt:0,available:false,details:{}};
+  artboard.advance(0);
+  const handRig={};
+  for(const side of ['left','right']){
+    const node=artboard.node(side==='left'?'hand left':'hand  right');
+    const shoulder=artboard.rootBone(side==='left'?'Left Arm Shoulder':'Right Arm Shoulder');
+    if(node&&shoulder){const m=node.worldTransform();handRig[side]={node,shoulder,base:{x:node.x,y:node.y},motion:new HandMotion(m.tx,m.ty)};m.delete();}
+  }
+  hands.available=!!handRig.left&&!!handRig.right;
   const hair=artboard.node('Hair Motion'),hairMotion=new HairMotion();
   let hairBase=hair?{y:hair.y,rotation:hair.rotation}:null;
   let torsoBase=torso?{x:torso.x,y:torso.y,rotation:torso.rotation}:null;
@@ -40,6 +50,7 @@ export async function createAvatar(canvas, onState) {
     // Remove last frame's procedural offset before advancing authored animations.
     if(torso&&torsoBase){torso.x=torsoBase.x;torso.y=torsoBase.y;torso.rotation=torsoBase.rotation;}
     if(hair&&hairBase){hair.y=hairBase.y;hair.rotation=hairBase.rotation;}
+    for(const rig of Object.values(handRig)){rig.node.x=rig.base.x;rig.node.y=rig.base.y;}
     if(pointer.available){
       const active=target.pointerEnabled&&target.enabled;
       const motion=pointerMotion.update(active?(target.pointerX??target.x):0,active?(target.pointerY??target.y):0,dt);
@@ -76,11 +87,27 @@ export async function createAvatar(canvas, onState) {
       hair.y+=sway.y;hair.rotation+=sway.rotation;
     }
     artboard.advance(dt);
+    for(const [side,rig] of Object.entries(handRig)){
+      const {node,shoulder}=rig;
+      rig.base={x:node.x,y:node.y};
+      const sm=shoulder.worldTransform(),pm=new runtime.Mat2D(),rest=node.worldTransform();
+      node.parentWorldTransform(pm);
+      const anchor={x:sm.tx,y:sm.ty};
+      const goal=hands.enabled&&now-hands.updatedAt<350?hands.targets[side]:null;
+      const safe=goal?limitReach({x:anchor.x+goal.x,y:anchor.y+goal.y},anchor):{x:rest.tx,y:rest.ty};
+      const smooth=rig.motion.update(safe,dt);
+      const point=goal?limitReach(smooth,anchor):smooth;
+      const local=worldToParent(point,pm);
+      if(local){node.x=local.x;node.y=local.y;}
+      hands.details[side]={tracked:!!goal,world:point,local,anchor,reach:Math.hypot(point.x-anchor.x,point.y-anchor.y)};
+      sm.delete();pm.delete();rest.delete();
+    }
+    artboard.advance(0);
     if(pointerNode){pointer.targetX=pointerNode.x;pointer.targetY=pointerNode.y;}
     renderer.clear();renderer.save();
     renderer.align(runtime.Fit.contain,runtime.Alignment.center,{minX:0,minY:0,maxX:canvas.width,maxY:canvas.height},artboard.bounds);
     artboard.draw(renderer);renderer.restore();metrics.drawMs=metrics.drawMs*.9+(performance.now()-start)*.1;raf=runtime.requestAnimationFrame(frame);
   }
   raf=runtime.requestAnimationFrame(frame);
-  return {loaded:true,target,metrics,pointer,hairAvailable:!!hair,bodyAvailable:!!torso,number:name=>instance.number(name),resizeDrawingSurfaceToCanvas:resize,dispose(){disposed=true;runtime.cancelAnimationFrame(raf);observer.disconnect();for(const a of animations.values())a.delete();machine.delete();artboard.delete();renderer.delete();instance.unref();file.unref();}};
+  return {loaded:true,target,metrics,pointer,hands,hairAvailable:!!hair,bodyAvailable:!!torso,number:name=>instance.number(name),resizeDrawingSurfaceToCanvas:resize,dispose(){disposed=true;runtime.cancelAnimationFrame(raf);observer.disconnect();for(const a of animations.values())a.delete();machine.delete();artboard.delete();renderer.delete();instance.unref();file.unref();}};
 }

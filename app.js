@@ -2,6 +2,7 @@ import {HeadTracker,LipTracker,Dwell,measureFace} from './tracking-core.mjs';
 import {createAvatar} from './avatar-renderer.mjs';
 import {facePointer} from './pointer-mapping.mjs';
 import {createTrackingClient} from './tracking-client.mjs';
+import {mapHands} from './hand-tracking.mjs';
 const $=id=>document.getElementById(id);
 const names=['idle','L','R','TH','FV','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink','shocked','angry'];
 const fields=[['visemes',15],['Expressions',12],['poses',3],['sizing ',2],['xy',5]];
@@ -47,7 +48,7 @@ async function loadModels(){
   if(!tracker)tracker=createTrackingClient();
   try{await tracker.ready;}catch(error){tracker.dispose();tracker=null;throw error;}
 }
-function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;}set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
+function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;avatar.hands.enabled=false;avatar.hands.targets={left:null,right:null};}set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
 async function stop(){
   running=false;generation++;const old=stream;stream=null;old?.getTracks().forEach(t=>t.stop());
   const rec=recognition;recognition=null;rec?.abort();const ac=audio;audio=null;analyser=null;await ac?.close().catch(()=>{});
@@ -98,9 +99,13 @@ async function loop(now){
     analyser.getFloatTimeDomainData(wave);const rms=Math.sqrt(wave.reduce((s,v)=>s+v*v,0)/wave.length);
     $('volume').style.width=Math.min(100,rms*Number($('micGain').value)*700)+'%';
     const wantBody=$('bodyTracking').checked&&now-lastPose>(inferenceCost>100?1500:500);
-    const tracked=await tracker.detect(video,now,wantBody);
+    const tracked=await tracker.detect(video,now,wantBody,$('handTracking').checked);
     if(!tracked||!running||token!==generation)return;
     inferenceCost=tracked.ms;
+    avatar.hands.enabled=$('handTracking').checked;
+    avatar.hands.targets=mapHands(tracked.hands,tracked.body?.landmarks[0],{mirror:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth});
+    avatar.hands.updatedAt=performance.now();
+    $('handStatus').textContent=!tracker.handsAvailable?'Hand model unavailable':Object.entries(avatar.hands.targets).filter(([,v])=>v).map(([s])=>s+' hand').join(' + ')||'Show hands and shoulders to camera';
     const result=tracked.result,landmarks=result.faceLandmarks[0];
     if(now-lastDebug>500){$('perf').textContent=`${Math.round(avatar.metrics.fps)} FPS · ${tracker.acceleration} ${Math.round(tracked.ms)} ms`;$('perf').title='Avatar rendering FPS and camera inference time';$('pointerStatus').textContent=`Rive pointer: ${avatar.pointer.source} · ${avatar.pointer.targetX.toFixed(0)}, ${avatar.pointer.targetY.toFixed(0)}`;}
     if(!landmarks){
@@ -151,7 +156,7 @@ async function loop(now){
     // Avoid expression changes competing with the user's speaking performance.
     const exp=$('faceExpressions').checked&&!lip.speaking&&lip.jaw<.12?(smile>.6?2:0):0;
     set('Expressions',expressionFilter.next(exp,now));
-    set('poses',poseFilter.next($('bodyTracking').checked&&$('gestures').checked?poseValue:0,now));
+    set('poses',poseFilter.next(!$('handTracking').checked&&$('bodyTracking').checked&&$('gestures').checked?poseValue:0,now));
   }catch(e){const error=e.message;if(token===generation)void stop().then(()=>{status('Tracking error');message(error);});}
   finally{inferenceBusy=false;inferenceEnd=performance.now();}
 }
