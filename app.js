@@ -2,7 +2,6 @@ import {HeadTracker,LipTracker,Dwell,measureFace} from './tracking-core.mjs';
 import {createAvatar} from './avatar-renderer.mjs';
 import {facePointer} from './pointer-mapping.mjs';
 import {createTrackingClient} from './tracking-client.mjs';
-import {handTargets} from './detail-tracking.mjs';
 const $=id=>document.getElementById(id);
 const names=['idle','L','R','TH','FV','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink','shocked','angry'];
 const fields=[['visemes',15],['Expressions',12],['poses',3],['sizing ',2],['xy',5]];
@@ -16,17 +15,12 @@ let head=new HeadTracker(),lips=new LipTracker(),poseFilter=new Dwell(0,200),exp
 const wave=new Float32Array(1024);
 const message=t=>$('message').textContent=t,status=t=>$('status').textContent=t;
 const detailPanel=document.createElement('section');detailPanel.className='panel rig-details';
-detailPanel.innerHTML=`<div class="tag"><span>03 / HANDS & BACKGROUND</span></div>
-<label class="toggle"><span>Hand tracking<small>Your hands drive the new Rive targets</small></span><input id="handTracking" type="checkbox" checked></label>
-<p id="detailStatus" class="muted">Hands · waiting for camera</p><div class="divider"></div>
+detailPanel.innerHTML=`<div class="tag"><span>03 / BACKGROUND</span></div>
 <label class="toggle"><span>Transparent background<small>Off: background visible · On: transparent</small></span><input id="bgTransparent" type="checkbox"></label>
 <label class="background-color"><span>Background colour<small id="bgColorLabel">#FFFFFF</small></span><input id="bgColor" aria-label="Background colour" type="color" value="#ffffff"></label>`;
 document.querySelector('aside').insertBefore(detailPanel,document.querySelector('aside .advanced'));
 $('bgTransparent').onchange=()=>{avatar?.background.setTransparent($('bgTransparent').checked);$('bgColor').disabled=$('bgTransparent').checked;};
 $('bgColor').oninput=()=>{avatar?.background.setColor($('bgColor').value);$('bgColorLabel').textContent=$('bgColor').value.toUpperCase();};
-$('handTracking').onchange=()=>{if(avatar)avatar.detailTargets.hands={left:null,right:null};};
-let handSeen={left:0,right:0};
-let armPose=null,armPoseAt=0;
 for(const [key,max] of fields){
   const row=document.createElement('div');row.className='control';
   const label=document.createElement('div'),text=document.createElement('span'),out=document.createElement('output'),input=document.createElement('input');
@@ -60,7 +54,7 @@ async function loadModels(){
   if(!tracker)tracker=createTrackingClient();
   try{await tracker.ready;}catch(error){tracker.dispose();tracker=null;throw error;}
 }
-function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;avatar.detailTargets.hands={left:null,right:null};avatar.detailTargets.eyes=null;avatar.detailTargets.enabled=false;}handSeen={left:0,right:0};armPose=null;armPoseAt=0;set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
+function neutralize(){if(avatar){avatar.target.enabled=false;avatar.target.voice=0;}set('visemes',0);set('Expressions',0);set('poses',0);set('xy',1);}
 async function stop(){
   running=false;generation++;const old=stream;stream=null;old?.getTracks().forEach(t=>t.stop());
   const rec=recognition;recognition=null;rec?.abort();const ac=audio;audio=null;analyser=null;await ac?.close().catch(()=>{});
@@ -110,18 +104,10 @@ async function loop(now){
   try{
     analyser.getFloatTimeDomainData(wave);const rms=Math.sqrt(wave.reduce((s,v)=>s+v*v,0)/wave.length);
     $('volume').style.width=Math.min(100,rms*Number($('micGain').value)*700)+'%';
-    const wantBody=($('bodyTracking').checked||$('handTracking').checked)&&now-lastPose>($('handTracking').checked?250:inferenceCost>100?1500:500);
-    const tracked=await tracker.detect(video,now,wantBody,$('handTracking').checked);
+    const wantBody=$('bodyTracking').checked&&now-lastPose>(inferenceCost>100?1500:500);
+    const tracked=await tracker.detect(video,now,wantBody);
     if(!tracked||!running||token!==generation)return;
     inferenceCost=tracked.ms;
-    if(wantBody){armPose=tracked.body?.landmarks?.[0]||null;armPoseAt=now;lastPose=now;}
-    avatar.detailTargets.enabled=$('handTracking').checked;
-    if($('handTracking').checked&&armPose&&now-armPoseAt<900){
-      const detected=handTargets(tracked.hands,armPose,{flipX:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth});
-      for(const side of ['left','right'])if(detected[side]){avatar.detailTargets.hands[side]=detected[side];handSeen[side]=now;}
-    }
-    for(const side of ['left','right'])if(now-handSeen[side]>450)avatar.detailTargets.hands[side]=null;
-    if(now-lastDebug>500)$('detailStatus').textContent=armPose?`Hands: ${avatar.detailTargets.hands.left?'L':'—'} / ${avatar.detailTargets.hands.right?'R':'—'}`:'Keep shoulders and elbows in camera view';
     const result=tracked.result,landmarks=result.faceLandmarks[0];
     if(now-lastDebug>500){$('perf').textContent=`${Math.round(avatar.metrics.fps)} FPS · ${tracker.acceleration} ${Math.round(tracked.ms)} ms`;$('perf').title='Avatar rendering FPS and camera inference time';$('pointerStatus').textContent=`Rive pointer: ${avatar.pointer.source} · ${avatar.pointer.targetX.toFixed(0)}, ${avatar.pointer.targetY.toFixed(0)}`;}
     if(!landmarks){
