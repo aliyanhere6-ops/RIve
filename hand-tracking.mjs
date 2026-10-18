@@ -17,27 +17,18 @@ export class HandMotion{
     return {x:this.x,y:this.y};
   }
 }
-// Match each detected wrist to a body wrist; labels alone can swap during crossed hands.
-export function mapHands(hands,pose,{mirror=true,aspect=.75}={}){
+// Drive the user's existing Rive targets from shoulder-relative elbow positions.
+export function mapHands(_hands,pose,{mirror=true,aspect=.75}={}){
   const out={left:null,right:null};
   const valid=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&(p.visibility??1)>.55;
   if(!valid(pose?.[11])||!valid(pose?.[12]))return out;
-  const dist=(a,b)=>Math.hypot(a.x-b.x,(a.y-b.y)*aspect);
-  const width=dist(pose[11],pose[12]);if(width<.08)return out;
-  const detected=(hands?.landmarks||[]).map(x=>x[0]).filter(valid);
-  const arms=[[11,15],[12,16]].map(([s,w])=>({s:pose[s],w:pose[w],hand:null}));
-  if(detected.length>=2){
-    const direct=dist(detected[0],arms[0].w)+dist(detected[1],arms[1].w);
-    const swap=dist(detected[1],arms[0].w)+dist(detected[0],arms[1].w);
-    arms[0].hand=detected[direct<=swap?0:1];arms[1].hand=detected[direct<=swap?1:0];
-  }else if(detected.length===1){arms[dist(detected[0],arms[0].w)<=dist(detected[0],arms[1].w)?0:1].hand=detected[0];}
-  const mid=(pose[11].x+pose[12].x)/2,sign=mirror?-1:1;
-  for(const a of arms){
-    // Only a visible hand activates an arm; offscreen hands return to the authored rest.
-    if(!a.hand||!valid(a.w)||dist(a.hand,a.w)>.3)continue;
-    const side=(a.s.x-mid)*sign>0?'left':'right';
-    const scale=294/(width*1.55);
-    out[side]={x:(a.hand.x-a.s.x)*sign*scale,y:(a.hand.y-a.s.y)*aspect*scale};
+  const width=Math.hypot(pose[11].x-pose[12].x,(pose[11].y-pose[12].y)*aspect);
+  if(width<.08)return out;
+  const mid=(pose[11].x+pose[12].x)/2,sign=mirror?-1:1,scale=294/(width*1.55);
+  for(const [s,e] of [[11,13],[12,14]]){
+    const shoulder=pose[s],elbow=pose[e];if(!valid(elbow))continue;
+    const side=(shoulder.x-mid)*sign>0?'left':'right';
+    out[side]={x:(elbow.x-shoulder.x)*sign*scale,y:(elbow.y-shoulder.y)*aspect*scale};
   }
   return out;
 }

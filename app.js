@@ -105,7 +105,7 @@ async function loop(now){
     avatar.hands.enabled=$('handTracking').checked;
     avatar.hands.targets=mapHands(tracked.hands,tracked.body?.landmarks[0],{mirror:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth});
     avatar.hands.updatedAt=performance.now();
-    $('handStatus').textContent=!tracker.handsAvailable?'Hand model unavailable':Object.entries(avatar.hands.targets).filter(([,v])=>v).map(([s])=>s+' hand').join(' + ')||'Show hands and shoulders to camera';
+    $('handStatus').textContent=Object.entries(avatar.hands.targets).filter(([,v])=>v).map(([s])=>s+' elbow').join(' + ')||'Keep shoulders and elbows in camera';
     const result=tracked.result,landmarks=result.faceLandmarks[0];
     if(now-lastDebug>500){$('perf').textContent=`${Math.round(avatar.metrics.fps)} FPS · ${tracker.acceleration} ${Math.round(tracked.ms)} ms`;$('perf').title='Avatar rendering FPS and camera inference time';$('pointerStatus').textContent=`Rive pointer: ${avatar.pointer.source} · ${avatar.pointer.targetX.toFixed(0)}, ${avatar.pointer.targetY.toFixed(0)}`;}
     if(!landmarks){
