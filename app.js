@@ -14,13 +14,6 @@ let inferenceEnd=0,inferenceCost=0;
 let head=new HeadTracker(),lips=new LipTracker(),poseFilter=new Dwell(0,200),expressionFilter=new Dwell(0,220);
 const wave=new Float32Array(1024);
 const message=t=>$('message').textContent=t,status=t=>$('status').textContent=t;
-const detailPanel=document.createElement('section');detailPanel.className='panel rig-details';
-detailPanel.innerHTML=`<div class="tag"><span>03 / BACKGROUND</span></div>
-<label class="toggle"><span>Transparent background<small>Off: background visible · On: transparent</small></span><input id="bgTransparent" type="checkbox"></label>
-<label class="background-color"><span>Background colour<small id="bgColorLabel">#FFFFFF</small></span><input id="bgColor" aria-label="Background colour" type="color" value="#ffffff"></label>`;
-document.querySelector('aside').insertBefore(detailPanel,document.querySelector('aside .advanced'));
-$('bgTransparent').onchange=()=>{avatar?.background.setTransparent($('bgTransparent').checked);$('bgColor').disabled=$('bgTransparent').checked;};
-$('bgColor').oninput=()=>{avatar?.background.setColor($('bgColor').value);$('bgColorLabel').textContent=$('bgColor').value.toUpperCase();};
 for(const [key,max] of fields){
   const row=document.createElement('div');row.className='control';
   const label=document.createElement('div'),text=document.createElement('span'),out=document.createElement('output'),input=document.createElement('input');
