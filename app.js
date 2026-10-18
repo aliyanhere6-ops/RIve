@@ -2,14 +2,14 @@ import {HeadTracker,LipTracker,Dwell,measureFace} from './tracking-core.mjs';
 import {createAvatar} from './avatar-renderer.mjs';
 import {facePointer} from './pointer-mapping.mjs';
 import {createTrackingClient} from './tracking-client.mjs';
-import {mapHands} from './hand-tracking.mjs';
+import {ElbowTracker} from './hand-tracking.mjs';
 const $=id=>document.getElementById(id);
 const names=['idle','L','R','TH','FV','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink','shocked','angry'];
 const fields=[['visemes',15],['Expressions',12],['poses',3],['sizing ',2],['xy',5]];
 const props={},values={},sliders={};
 let avatar,stream,audio,analyser,face,pose,recognition,modelPromise;
 let running=false,generation=0,lastFrame=-1,lastTick=0,lastPose=0,lastFace=0,poseValue=0;
-let shoulderNeutral=null;
+let shoulderNeutral=null,elbowTracker=new ElbowTracker();
 let tracker=null,inferenceBusy=false,lastDebug=0,lastOverlay=0;
 let inferenceEnd=0,inferenceCost=0;
 let head=new HeadTracker(),lips=new LipTracker(),poseFilter=new Dwell(0,200),expressionFilter=new Dwell(0,220);
@@ -66,13 +66,13 @@ $('start').onclick=async()=>{
     if(token!==generation)return;
     audio=new AudioContext();await audio.resume();analyser=audio.createAnalyser();analyser.fftSize=1024;
     audio.createMediaStreamSource(stream).connect(analyser);status('Preparing tracking…');await models();if(token!==generation)return;
-    head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;poseFilter=new Dwell(0,200);expressionFilter=new Dwell(0,220);
+    head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;elbowTracker=new ElbowTracker();poseFilter=new Dwell(0,200);expressionFilter=new Dwell(0,220);
     lastFrame=-1;lastTick=lastPose=lastFace=0;running=true;$('tracking').checked=true;$('calibrate').disabled=false;
     $('mode').textContent='CALIBRATING';status('Camera + microphone live');
     message('Look straight ahead with relaxed lips for one second. Size stays at your selected value.');startSpeech();requestAnimationFrame(loop);
   }catch(e){if(token===generation){await stop();status('Camera setup failed');message(e.name+': '+e.message+'. Close other camera apps and retry in Chrome or Edge.');}}
 };
-$('calibrate').onclick=()=>{head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;neutralize();message('Recalibrating: look straight ahead with relaxed lips for one second.');};
+$('calibrate').onclick=()=>{head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;elbowTracker=new ElbowTracker();neutralize();message('Recalibrating: look straight ahead with relaxed lips for one second.');};
 $('tracking').onchange=()=>{if(avatar)avatar.target.enabled=$('tracking').checked&&running;$('mode').textContent=$('tracking').checked?'TRACKING':'MANUAL';};
 $('autoSize').onchange=()=>{message($('autoSize').checked?'Auto size enabled: sustained distance changes only; head turns freeze sizing.':'Size locked. Adjust the sizing slider without disabling face tracking.');};
 
@@ -103,9 +103,9 @@ async function loop(now){
     if(!tracked||!running||token!==generation)return;
     inferenceCost=tracked.ms;
     avatar.hands.enabled=$('handTracking').checked;
-    avatar.hands.targets=mapHands(tracked.hands,tracked.body?.landmarks[0],{mirror:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth});
+    avatar.hands.targets=elbowTracker.update(tracked.body?.landmarks[0],now,{mirror:$('flipHorizontal').checked,aspect:video.videoHeight/video.videoWidth});
     avatar.hands.updatedAt=performance.now();
-    $('handStatus').textContent=Object.entries(avatar.hands.targets).filter(([,v])=>v).map(([s])=>s+' elbow').join(' + ')||'Keep shoulders and elbows in camera';
+    $('handStatus').textContent=Object.entries(avatar.hands.targets).filter(([,v])=>v).map(([s])=>s+' elbow').join(' + ')||'Hold elbows relaxed for 1 second, then move';
     const result=tracked.result,landmarks=result.faceLandmarks[0];
     if(now-lastDebug>500){$('perf').textContent=`${Math.round(avatar.metrics.fps)} FPS · ${tracker.acceleration} ${Math.round(tracked.ms)} ms`;$('perf').title='Avatar rendering FPS and camera inference time';$('pointerStatus').textContent=`Rive pointer: ${avatar.pointer.source} · ${avatar.pointer.targetX.toFixed(0)}, ${avatar.pointer.targetY.toFixed(0)}`;}
     if(!landmarks){

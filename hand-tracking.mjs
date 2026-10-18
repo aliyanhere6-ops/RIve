@@ -32,3 +32,24 @@ export function mapHands(_hands,pose,{mirror=true,aspect=.75}={}){
   }
   return out;
 }
+
+// Calibrate elbow offsets; do not replace an authored hand position with an elbow position.
+export class ElbowTracker{
+  constructor(){this.sides={};}
+  update(pose,now,options={}){
+    const measured=mapHands(null,pose,options),out={left:null,right:null};
+    for(const side of ['left','right']){
+      const p=measured[side];let state=this.sides[side];
+      if(!p){if(state&&now-state.last<180)out[side]=state.output;continue;}
+      if(!state)state=this.sides[side]={start:now,last:now,count:0,x:0,y:0,base:null,output:null};
+      state.last=now;
+      if(!state.base){
+        state.x+=p.x;state.y+=p.y;state.count++;
+        if(now-state.start>=650&&state.count>=6)state.base={x:state.x/state.count,y:state.y/state.count};
+        else continue;
+      }
+      state.output={x:p.x-state.base.x,y:p.y-state.base.y,relativeToRest:true};out[side]=state.output;
+    }
+    return out;
+  }
+}

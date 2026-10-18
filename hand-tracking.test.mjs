@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {worldToParent,limitReach,HandMotion,mapHands} from './hand-tracking.mjs';
+import {worldToParent,limitReach,HandMotion,mapHands,ElbowTracker} from './hand-tracking.mjs';
 const matrix={xx:0,xy:2,yx:-2,yy:0,tx:147,ty:385};
 assert.deepEqual(worldToParent({x:107,y:445},matrix),{x:30,y:20});
 assert.equal(worldToParent({x:1,y:1},{xx:0,xy:0,yx:0,yy:0,tx:0,ty:0}),null);
@@ -13,6 +13,17 @@ assert.deepEqual(a,b,'detection order must not swap arms');assert.ok(a.left&&a.r
 assert.deepEqual(mapHands(null,pose),a,'elbows work without hand detection');
 pose[15].x=.1;pose[16].y=.9;assert.deepEqual(mapHands(null,pose),a,'wrist motion cannot move elbow targets');
 pose[13].visibility=0;assert.equal(mapHands(null,pose).right,null,'lost elbow releases only its target');assert.deepEqual(mapHands(hands,null),{left:null,right:null});
+pose[13].visibility=1;
+const tracker=new ElbowTracker();let result;
+for(let t=0;t<=800;t+=100)result=tracker.update(pose,t);
+assert.ok(result.left&&result.right);
+assert.ok(Math.abs(result.right.x)<.001&&Math.abs(result.right.y)<.001,'calibration keeps authored resting hand position');
+pose[13].y-=.1;result=tracker.update(pose,900);
+assert.ok(result.right.y<0,'raising elbow produces an upward offset');
+assert.ok(Math.abs(result.left.y)<.001,'one elbow cannot move the other arm');
+assert.equal(result.right.relativeToRest,true);
+const held=tracker.update(null,1000);assert.deepEqual(held.right,result.right,'brief tracking loss must not snap to rest');
+assert.equal(tracker.update(null,1300).right,null,'sustained loss releases safely');
 globalThis.document={createElement:()=>({getContext:()=>null})};
 const {default:init}=await import('./vendor/canvas_advanced.mjs');
 const r=await init({wasmBinary:fs.readFileSync('vendor/runtime.wasm'),locateFile:n=>'vendor/'+n});

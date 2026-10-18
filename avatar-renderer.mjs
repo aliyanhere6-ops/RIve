@@ -94,7 +94,7 @@ export async function createAvatar(canvas, onState) {
       node.parentWorldTransform(pm);
       const anchor={x:sm.tx,y:sm.ty};
       const goal=hands.enabled&&now-hands.updatedAt<350?hands.targets[side]:null;
-      const safe=goal?limitReach({x:anchor.x+goal.x,y:anchor.y+goal.y},anchor):{x:rest.tx,y:rest.ty};
+      const safe=goal?limitReach({x:(goal.relativeToRest?rest.tx:anchor.x)+goal.x,y:(goal.relativeToRest?rest.ty:anchor.y)+goal.y},anchor):{x:rest.tx,y:rest.ty};
       const smooth=rig.motion.update(safe,dt);
       const point=goal?limitReach(smooth,anchor):smooth;
       const local=worldToParent(point,pm);
