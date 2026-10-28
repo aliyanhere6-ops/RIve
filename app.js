@@ -69,13 +69,13 @@ $('start').onclick=async()=>{
     if(token!==generation)return;
     audio=new AudioContext();await audio.resume();analyser=audio.createAnalyser();analyser.fftSize=1024;
     audio.createMediaStreamSource(stream).connect(analyser);status('Preparing tracking…');await models();if(token!==generation)return;
-    head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;poseFilter=new Dwell(0,200);expressionFilter=new Dwell(0,220);
+    head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;tracker.reset();poseFilter=new Dwell(0,200);expressionFilter=new Dwell(0,220);
     lastFrame=-1;lastTick=lastPose=lastFace=0;running=true;$('tracking').checked=true;$('calibrate').disabled=false;
     $('mode').textContent='CALIBRATING';status('Camera + microphone live');
     message('Look straight ahead with relaxed lips for one second. Size stays at your selected value.');startSpeech();requestAnimationFrame(loop);
   }catch(e){if(token===generation){await stop();status('Camera setup failed');message(e.name+': '+e.message+'. Close other camera apps and retry in Chrome or Edge.');}}
 };
-$('calibrate').onclick=()=>{head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;neutralize();message('Recalibrating: look straight ahead with relaxed lips for one second.');};
+$('calibrate').onclick=()=>{head=new HeadTracker();lips=new LipTracker();shoulderNeutral=null;tracker?.reset();neutralize();message('Recalibrating: look straight ahead with relaxed lips for one second.');};
 $('tracking').onchange=()=>{if(avatar)avatar.target.enabled=$('tracking').checked&&running;$('mode').textContent=$('tracking').checked?'TRACKING':'MANUAL';};
 $('autoSize').onchange=()=>{message($('autoSize').checked?'Auto size enabled: sustained distance changes only; head turns freeze sizing.':'Size locked. Adjust the sizing slider without disabling face tracking.');};
 
@@ -95,7 +95,7 @@ function draw(l){
 }
 async function loop(now){
   if(!running)return;requestAnimationFrame(loop);
-  const video=$('camera');if(inferenceBusy||now-inferenceEnd<Math.min(45,Math.max(8,inferenceCost*.12))||now-lastTick<42||video.readyState<2||video.currentTime===lastFrame)return;
+  const video=$('camera');if(inferenceBusy||now-lastTick<33||video.readyState<2||video.currentTime===lastFrame)return;
   lastTick=now;lastFrame=video.currentTime;
   const token=generation;inferenceBusy=true;
   try{
@@ -123,7 +123,7 @@ async function loop(now){
     if(now-lastDebug>500){$('telemetry').textContent=h.ready?`Head H ${(h.yaw*100).toFixed(0)} / V ${(h.pitch*100).toFixed(0)} · mouth ${lip.jaw.toFixed(2)} · mic ${lip.level.toFixed(3)} / gate ${lip.gate.toFixed(3)} · size ${$('autoSize').checked?'auto':'locked'}`:'Hold a neutral face for one second…';lastDebug=now;}
     // Body inference is optional and less frequent to keep face/mouth tracking responsive.
     avatar.target.bodyEnabled=$('bodyTracking').checked;
-    if(wantBody){
+    if(wantBody||tracked.bodyFresh){
       const s=tracked.body?.landmarks[0];poseValue=s?body(s):0;
       if(s&&(s[11].visibility??1)>.6&&(s[12].visibility??1)>.6){
         const center={x:(s[11].x+s[12].x)/2,y:(s[11].y+s[12].y)/2,roll:Math.atan2(s[11].y-s[12].y,Math.abs(s[11].x-s[12].x))};
