@@ -20,6 +20,15 @@ export class PointerMotion {
     return {x:this.x,y:this.y};
   }
 }
+// Intersect the original listener travel with this file's actual artboard.
+// A small inset keeps edge hits reliable instead of sending the pointer outside the clip.
+export function cameraPointerRig(artboard,neutral=CAMERA_RIG.center){
+ const valid=artboard&&['minX','minY','maxX','maxY'].every(k=>Number.isFinite(artboard[k]))&&artboard.maxX>artboard.minX&&artboard.maxY>artboard.minY;
+ const source=valid?artboard:CAMERA_RIG.bounds,inset=.5;
+ const bounds={minX:Math.max(source.minX,CAMERA_RIG.bounds.minX)+inset,minY:Math.max(source.minY,CAMERA_RIG.bounds.minY)+inset,maxX:Math.min(source.maxX,CAMERA_RIG.bounds.maxX)-inset,maxY:Math.min(source.maxY,CAMERA_RIG.bounds.maxY)-inset};
+ const center={x:clamp(Number.isFinite(neutral?.x)?neutral.x:CAMERA_RIG.center.x,bounds.minX,bounds.maxX),y:clamp(Number.isFinite(neutral?.y)?neutral.y:CAMERA_RIG.center.y,bounds.minY,bounds.maxY)};
+ return {center,bounds};
+}
 export function facePointer(face,neutral,{flipX=false,flipY=false,sensitivity=1}={}){
   const span=Math.max(.04,neutral.span||.2);
   // Turning in place must move the pointer even when the eye center barely moves.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {headPointer,rigPointer,clientPointer,facePointer,PointerMotion} from './pointer-mapping.mjs';
+import {headPointer,rigPointer,clientPointer,facePointer,PointerMotion,cameraPointerRig} from './pointer-mapping.mjs';
 assert.deepEqual(facePointer({x:.5,y:.4},{x:.5,y:.4,span:.2}),{x:0,y:0});
 const moved=facePointer({x:.55,y:.45},{x:.5,y:.4,span:.2});
 assert.ok(Math.abs(moved.x-.5)<1e-8&&Math.abs(moved.y-.5)<1e-8);
@@ -32,3 +32,10 @@ for(const rate of [24,30,60]){
 const quiet=new PointerMotion();for(let i=0;i<120;i++)quiet.update(i%2?.005:-.005,0,1/30);
 assert.equal(quiet.x,0,'small camera noise does not shake the rig');
 console.log('PASS: smooth pointer steps, no overshoot, neutral return and noise rejection at 24/30/60 Hz');
+
+const updated=cameraPointerRig({minX:0,minY:0,maxX:500,maxY:486},{x:255.5,y:146.5});
+assert.deepEqual(rigPointer(0,0,updated.center,updated.bounds),{x:255.5,y:146.5},'neutral follows the current authored rig');
+assert.equal(rigPointer(0,1,updated.center,updated.bounds).y,485.5,'downward movement stays inside the updated artboard');
+const tall=cameraPointerRig({minX:0,minY:0,maxX:500,maxY:574});assert.equal(tall.bounds.maxY,498.5,'artboard growth cannot move outside the original listener');
+for(const value of [-1,-.8,-.2,0,.2,.8,1]){const p=rigPointer(value,value,updated.center,updated.bounds);assert.ok(p.x>0&&p.x<500&&p.y>0&&p.y<486);}
+console.log('PASS: authored neutral and full valid cursor travel for resized artboards');
