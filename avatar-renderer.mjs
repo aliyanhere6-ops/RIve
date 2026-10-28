@@ -1,5 +1,5 @@
 import {HairMotion} from './hair-motion.mjs';
-import {rigPointer,PointerMotion} from './pointer-mapping.mjs';
+import {rigPointer,PointerMotion,CAMERA_RIG} from './pointer-mapping.mjs';
 // Keep the authored state machine/data bindings, then blend tracking poses before drawing.
 export async function createAvatar(canvas, onState, onPose=()=>{}) {
   const base=new URL('./vendor/',import.meta.url).href;
@@ -27,7 +27,7 @@ export async function createAvatar(canvas, onState, onPose=()=>{}) {
   const mouths=['idle ','L','R','Th','Fv','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink ','shoking ','Angry'];
   const torso=artboard.node('body');
   const pointerNode=artboard.node('Head Pointer Target');
-  const pointerCenter=pointerNode?{x:pointerNode.x,y:pointerNode.y}:{x:250,y:154};
+  const pointerCenter=CAMERA_RIG.center;
   const pointer={available:!!pointerNode,source:'neutral',x:pointerCenter.x,y:pointerCenter.y,targetX:pointerCenter.x,targetY:pointerCenter.y,events:0};
   const pointerMotion=new PointerMotion();
   const hair=artboard.node('Hair Motion'),hairMotion=new HairMotion();
@@ -54,7 +54,7 @@ export async function createAvatar(canvas, onState, onPose=()=>{}) {
       const motion=pointerMotion.update(active?(target.pointerX??target.x):0,active?(target.pointerY??target.y):0,dt);
       // Camera capture must never fall back to the user's mouse cursor.
       // Match the editor's full artboard pointer travel, preserving its authored neutral.
-      const point=rigPointer(motion.x,motion.y,pointerCenter,artboard.bounds);
+      const point=rigPointer(motion.x,motion.y,pointerCenter,CAMERA_RIG.bounds);
       pointer.source=target.pointerEnabled?(target.enabled?(target.pointerX===null?'head':'face'):'neutral'):'off';
       pointer.x=point.x;pointer.y=point.y;
       machine.pointerMove(point.x,point.y,1);pointer.events++;
@@ -98,7 +98,7 @@ export async function createAvatar(canvas, onState, onPose=()=>{}) {
     artboard.advance(dt);
     if(pointerNode){pointer.targetX=pointerNode.x;pointer.targetY=pointerNode.y;}
     renderer.clear();renderer.save();
-    renderer.align(runtime.Fit.contain,runtime.Alignment.center,{minX:0,minY:0,maxX:canvas.width,maxY:canvas.height},artboard.bounds);
+    renderer.align(runtime.Fit.contain,runtime.Alignment.center,{minX:0,minY:0,maxX:canvas.width,maxY:canvas.height},CAMERA_RIG.bounds);
     artboard.draw(renderer);renderer.restore();metrics.drawMs=metrics.drawMs*.9+(performance.now()-start)*.1;raf=runtime.requestAnimationFrame(frame);
   }
   raf=runtime.requestAnimationFrame(frame);

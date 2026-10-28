@@ -6,6 +6,6 @@
   "scripts": {
     "build": "node build.cjs",
     "start": "node server.cjs",
-    "test": "node pointer-mapping.test.mjs && node tracking-core.test.mjs && node tracking-client.test.mjs && node hair-motion.test.mjs && node pose-triggers.test.mjs"
+    "test": "node pointer-mapping.test.mjs && node tracking-core.test.mjs && node tracking-client.test.mjs && node hair-motion.test.mjs && node pose-triggers.test.mjs && node tracking-rig.test.mjs"
   }
 }

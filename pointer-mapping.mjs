@@ -1,3 +1,5 @@
+// Keep the original camera rig independent of later artboard/background resizing.
+export const CAMERA_RIG={center:{x:250,y:154},bounds:{minX:0,minY:0,maxX:500,maxY:499}};
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 // A critically damped follower preserves velocity between camera samples.
 // Small landmark noise is ignored; large changes enter at a bounded speed.
