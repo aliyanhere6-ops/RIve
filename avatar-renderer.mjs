@@ -1,3 +1,4 @@
+import {BodyMotion} from './body-motion.mjs';
 import {HairMotion} from './hair-motion.mjs';
 import {rigPointer,PointerMotion,CAMERA_RIG} from './pointer-mapping.mjs';
 // Keep the authored state machine/data bindings, then blend tracking poses before drawing.
@@ -25,7 +26,7 @@ export async function createAvatar(canvas, onState, onPose=()=>{}) {
   function animation(name){if(!animations.has(name)){const a=artboard.animationByName(name);if(!a)throw Error('Missing animation '+name);animations.set(name,new runtime.LinearAnimationInstance(a,artboard));}return animations.get(name);}
   function apply(name,mix=1){const a=animation(name);a.time=0;a.advance(0);a.apply(mix);}
   const mouths=['idle ','L','R','Th','Fv','Ch.j.Sh','DGKNSTXYZ','A E I','Ee','Uh H Ah','O','Oo Uu W','Oo Uu W 2','wink ','shoking ','Angry'];
-  const torso=artboard.node('body');
+  const torso=artboard.node('body'),bodyMotion=new BodyMotion();
   const pointerNode=artboard.node('Head Pointer Target');
   const pointerCenter=CAMERA_RIG.center;
   const pointer={available:!!pointerNode,source:'neutral',x:pointerCenter.x,y:pointerCenter.y,targetX:pointerCenter.x,targetY:pointerCenter.y,events:0};
@@ -34,7 +35,7 @@ export async function createAvatar(canvas, onState, onPose=()=>{}) {
   let hairBase=hair?{y:hair.y,rotation:hair.rotation}:null;
   let torsoBase=torso?{x:torso.x,y:torso.y,rotation:torso.rotation}:null;
   const target={enabled:false,x:0,y:0,pointerX:null,pointerY:null,pointerEnabled:true,viseme:0,opening:0,bodyX:0,bodyY:0,bodyRoll:0,bodyEnabled:true,voice:0,hairEnabled:true,hairStrength:1};
-  let x=0,y=0,opening=0,last=0,disposed=false,raf,bodyX=0,bodyY=0,bodyRoll=0,selectedMouth=0,lastMouthSwitch=0;
+  let x=0,y=0,opening=0,last=0,disposed=false,raf,selectedMouth=0,lastMouthSwitch=0;
   const metrics={fps:0,drawMs:0};let frames=0,metricTime=0;
   const resize=()=>{const dpr=Math.min(1.25,devicePixelRatio||1,Math.sqrt(1000000/Math.max(1,canvas.clientWidth*canvas.clientHeight)));canvas.width=Math.max(1,Math.round(canvas.clientWidth*dpr));canvas.height=Math.max(1,Math.round(canvas.clientHeight*dpr));};
   const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
@@ -84,11 +85,8 @@ export async function createAvatar(canvas, onState, onPose=()=>{}) {
     }
     if(torso){
       torsoBase={x:torso.x,y:torso.y,rotation:torso.rotation};
-      const enabled=target.enabled&&target.bodyEnabled,follow=1-Math.exp(-dt/.16);
-      bodyX+=((enabled?target.bodyX*12+x*3:0)-bodyX)*follow;
-      bodyY+=((enabled?target.bodyY*6:0)-bodyY)*follow;
-      bodyRoll+=((enabled?target.bodyRoll*.1+x*.022:0)-bodyRoll)*follow;
-      torso.x+=bodyX;torso.y+=bodyY;torso.rotation+=bodyRoll;
+      const motion=bodyMotion.update(dt,{enabled:target.enabled&&target.bodyEnabled,x:target.bodyX,y:target.bodyY,roll:target.bodyRoll,head:x});
+      torso.x+=motion.x;torso.y+=motion.y;torso.rotation+=motion.rotation;
     }
     if(hair){
       hairBase={y:hair.y,rotation:hair.rotation};
