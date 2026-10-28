@@ -1,7 +1,7 @@
 import {HairMotion} from './hair-motion.mjs';
 import {rigPointer,PointerMotion} from './pointer-mapping.mjs';
 // Keep the authored state machine/data bindings, then blend tracking poses before drawing.
-export async function createAvatar(canvas, onState) {
+export async function createAvatar(canvas, onState, onPose=()=>{}) {
   const base=new URL('./vendor/',import.meta.url).href;
   const {default:initialize}=await import(base+'canvas_advanced.mjs');
   const wasm=await fetch(base+'runtime.wasm');if(!wasm.ok)throw Error('Local Rive runtime unavailable');
@@ -12,6 +12,15 @@ export async function createAvatar(canvas, onState) {
   const machine=new runtime.StateMachineInstance(artboard.stateMachineByName('State Machine 1'),artboard);
   const model=file.viewModelByName('main '),instance=model.instanceByName('Room')||model.defaultInstance()||model.instance();
   artboard.bindViewModelInstance(instance);machine.bindViewModelInstance(instance);
+  const poseNames=['Guide','hey','peace sign','perfect','win'];
+  const poseTriggers=new Map(poseNames.map(name=>{const property=instance.trigger(name);if(!property)throw Error('Missing pose trigger '+name);return [name,property];}));
+  const poseStates=new Set(['guide 1','guide -1','hey 1','hey -1','peace sign 1','peace sign -1','perfect','perfect -1','winning ','winning  -1']);
+  let pendingPose=null;
+  const poses={active:null,queued:null,request(name){
+    if(!poseTriggers.has(name))throw Error('Unknown pose '+name);
+    if(this.active){this.queued=name;}else{this.active=name;pendingPose=name;}
+    onPose(this.active,this.queued);
+  }};
   const renderer=runtime.makeRenderer(canvas),animations=new Map();
   function animation(name){if(!animations.has(name)){const a=artboard.animationByName(name);if(!a)throw Error('Missing animation '+name);animations.set(name,new runtime.LinearAnimationInstance(a,artboard));}return animations.get(name);}
   function apply(name,mix=1){const a=animation(name);a.time=0;a.advance(0);a.apply(mix);}
@@ -52,8 +61,19 @@ export async function createAvatar(canvas, onState) {
     }
     // Reset before the authored listener runs; resetting afterwards erases its pose.
     if(target.enabled)apply('RESET');
+    // The authored return-to-rest transition can take a few ticks to accept a trigger.
+    // Keep the request pending until the state machine acknowledges a pose state.
+    if(pendingPose){instance.trigger(pendingPose).trigger();}
     machine.advanceAndApply(dt);
-    if(machine.stateChangedCount()){const states=[];for(let i=0;i<machine.stateChangedCount();i++)states.push(machine.stateChangedNameByIndex(i));onState(states);}
+    if(machine.stateChangedCount()){
+      const states=[];for(let i=0;i<machine.stateChangedCount();i++)states.push(machine.stateChangedNameByIndex(i));
+      onState(states);
+      if(states.some(state=>poseStates.has(state)))pendingPose=null;
+      if(states.includes('still')&&!states.some(state=>poseStates.has(state))){
+        poses.active=null;const next=poses.queued;poses.queued=null;
+        if(next)poses.request(next);else onPose(null,null);
+      }
+    }
     if(target.enabled){
       const a=1-Math.exp(-dt/.065);x+=(target.x-x)*a;y+=(target.y-y)*a;opening+=(target.opening-opening)*(1-Math.exp(-dt/.035));
       // The mouth drawings have separate teeth/tongue/visibility keys. Mixing
@@ -82,5 +102,5 @@ export async function createAvatar(canvas, onState) {
     artboard.draw(renderer);renderer.restore();metrics.drawMs=metrics.drawMs*.9+(performance.now()-start)*.1;raf=runtime.requestAnimationFrame(frame);
   }
   raf=runtime.requestAnimationFrame(frame);
-  return {loaded:true,target,metrics,pointer,hairAvailable:!!hair,bodyAvailable:!!torso,number:name=>instance.number(name),resizeDrawingSurfaceToCanvas:resize,dispose(){disposed=true;runtime.cancelAnimationFrame(raf);observer.disconnect();for(const a of animations.values())a.delete();machine.delete();artboard.delete();renderer.delete();instance.unref();file.unref();}};
+  return {loaded:true,target,metrics,pointer,poses,hairAvailable:!!hair,bodyAvailable:!!torso,number:name=>instance.number(name),resizeDrawingSurfaceToCanvas:resize,dispose(){disposed=true;runtime.cancelAnimationFrame(raf);observer.disconnect();for(const a of animations.values())a.delete();machine.delete();artboard.delete();renderer.delete();instance.unref();file.unref();}};
 }

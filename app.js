@@ -36,8 +36,12 @@ function set(key,n){
   if(key==='visemes')$('visemeName').textContent=`${n} · ${names[n]}`;
 }
 window.studio={values,set,get avatar(){return avatar},get properties(){return Object.keys(props)}};
-createAvatar($('avatar'),states=>{$('states').textContent='Rive: '+states.join(', ');}).then(result=>{
+createAvatar($('avatar'),states=>{$('states').textContent='Rive: '+states.join(', ');},(active,queued)=>{
+  $('poseStatus').textContent=active?'Playing '+active+(queued?' · Next: '+queued:''):'Ready';
+  document.querySelectorAll('[data-pose]').forEach(button=>{button.setAttribute('aria-pressed',String(button.dataset.pose===active));button.classList.toggle('queued',button.dataset.pose===queued);});
+}).then(result=>{
   avatar=result;
+  document.querySelectorAll('[data-pose]').forEach(button=>{button.disabled=false;button.onclick=()=>avatar.poses.request(button.dataset.pose);});
   for(const [key]of fields){props[key]=avatar.number(key);if(!props[key])throw Error('Missing property '+key);set(key,key==='xy'?1:0);}
   $('start').disabled=false;status('Character ready');message('Start performance, then look straight ahead during calibration.');
 }).catch(e=>{status('Avatar load failed');message(e.message);});
